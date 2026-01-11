@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 纯净星座</title>
+    <title>Three.js 纯净星座 - 灵敏版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000205; }
         
         #video-container { display: none; }
 
-        /* 仅保留纯图形加载动画，无文字 */
+        /* 纯图形加载 */
         #loader {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: #000205; display: flex;
@@ -128,7 +128,6 @@
         let targetPositions = new Float32Array(COUNT * 3);
         let time = 0;
         
-        // 状态
         let state = {
             expansion: 1.0,       
             turbulence: 0.2,      
@@ -157,8 +156,7 @@
             scene.fog = new THREE.FogExp2(0x000103, 0.02); 
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-            // 【修改点】拉近相机距离，起到放大的效果 (原45 -> 38)
-            camera.position.z = 38;
+            camera.position.z = 38; // 保持放大的视角
             camera.lookAt(0,0,0);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -181,7 +179,7 @@
             const stars = data.stars;
             const arr = new Float32Array(COUNT * 3);
             
-            // 【修改点】整体缩放比例，让星座铺得更开 (原1.0 -> 1.3)
+            // 保持1.3倍放大
             const SCALE = 1.3;
 
             for(let i=0; i<COUNT; i++) {
@@ -190,7 +188,6 @@
                 const rand = Math.random();
 
                 if (rand < 0.15) {
-                    // 恒星点
                     const starIdx = Math.floor(Math.random() * stars.length);
                     const star = stars[starIdx];
                     
@@ -202,7 +199,6 @@
                     y = (star[1] + r * Math.sin(phi) * Math.sin(theta)) * SCALE;
                     z = (star[2] + r * Math.cos(phi)) * SCALE;
                 } else {
-                    // 星云背景
                     const s1 = stars[Math.floor(Math.random() * stars.length)];
                     const s2 = stars[Math.floor(Math.random() * stars.length)];
                     
@@ -278,37 +274,30 @@
                     void main() {
                         vec3 pos = position;
 
-                        // 距离混合
-                        float dist = length(pos) / 25.0; // 调整计算范围适应放大后的尺寸
+                        float dist = length(pos) / 25.0; 
                         vColor = mix(uColorInner, uColorOuter, clamp(dist, 0.0, 1.0));
                         
-                        // 闪烁
                         float twinkle = 0.0;
                         if (size > 1.5) {
                             twinkle = sin(uTime * 5.0 + randomness.x * 100.0) * 0.3;
                             vColor += vec3(0.5); 
                         }
 
-                        // 呼吸
                         float breath = sin(uTime * 1.5 + randomness.x * 20.0) * 0.2;
                         
                         vec3 dir = normalize(pos);
                         if(length(pos) < 0.1) dir = vec3(0.0, 1.0, 0.0);
                         
-                        // 扰动
                         pos += dir * breath * uTurbulence; 
                         
-                        // 爆炸/收缩
                         float expFactor = max(0.0, uExpansion - 1.0);
                         pos += dir * expFactor * 15.0 * randomness.y; 
                         
-                        // 整体缩放
                         pos *= uExpansion;
 
                         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
                         gl_Position = projectionMatrix * mvPosition;
 
-                        // 粒子大小
                         float sizeMult = (1.0 - dist * 0.5) + twinkle;
                         gl_PointSize = size * sizeMult * (350.0 / -mvPosition.z);
                         
@@ -425,7 +414,9 @@
             const currX = 1.0 - lm[9].x; 
             const velocity = currX - lastHandX;
             lastHandX = currX;
-            const swipeThreshold = 0.08; 
+            
+            // 【修改点】灵敏度设为 0.04 (稍微小一点点的幅度)
+            const swipeThreshold = 0.04; 
 
             if (bentCount < 3) {
                 if (velocity > swipeThreshold) return 'SWIPE_RIGHT';
