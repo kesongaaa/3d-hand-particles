@@ -3,22 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 纯净粒子流体</title>
+    <title>Three.js 粒子流体 (优化版)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000205; font-family: sans-serif; }
         
-        /* 隐藏视频，只保留逻辑 */
         #video-container {
             position: absolute; bottom: 10px; left: 10px;
             width: 120px; height: 90px;
-            opacity: 0.3; /* 半透明，不干扰视觉 */
-            border-radius: 8px; overflow: hidden;
-            pointer-events: none;
-            z-index: 0;
+            opacity: 0.3; border-radius: 8px; overflow: hidden;
+            pointer-events: none; z-index: 0;
         }
         #input-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 
-        /* 复刻截图中的加载样式 */
         #loader {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: #000205; display: flex; flex-direction: column;
@@ -26,27 +22,29 @@
             z-index: 100; transition: opacity 0.8s ease;
         }
         
-        /* 蓝色圆环加载动画 */
         .spinner {
             width: 50px; height: 50px;
             border: 4px solid rgba(0, 200, 255, 0.2);
-            border-top: 4px solid #00d2ff; /* 亮蓝 */
+            border-top: 4px solid #00d2ff;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-bottom: 20px;
         }
         
         .loading-text {
-            color: #00d2ff;
-            font-size: 16px;
-            letter-spacing: 1px;
+            color: #00d2ff; font-size: 16px; letter-spacing: 1px;
             text-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
+        }
+
+        /* 调试信息 (可选，帮你确认手势是否识别) */
+        #debug-info {
+            position: absolute; top: 10px; right: 10px;
+            color: rgba(255,255,255,0.3); font-size: 12px; pointer-events: none;
         }
 
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 
-    <!-- 核心库 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -58,6 +56,8 @@
         <div class="spinner"></div>
         <div class="loading-text">正在初始化视觉核心...</div>
     </div>
+    
+    <div id="debug-info">Gesture: Wait...</div>
 
     <div id="video-container">
         <video id="input-video" playsinline></video>
@@ -77,10 +77,10 @@
 
         // --- 核心配置 ---
         const CONFIG = {
-            count: 35000,         // 粒子数量增加到3.5万，更细腻
-            radius: 12,           // 默认球体半径
-            colorInner: new THREE.Color(0x0066ff), // 核心蓝
-            colorOuter: new THREE.Color(0x00ffff), // 外部青
+            count: 35000,         
+            radius: 12,           
+            colorInner: new THREE.Color(0x0066ff), 
+            colorOuter: new THREE.Color(0x00ffff), 
         };
 
         let scene, camera, renderer, particles, material;
@@ -88,18 +88,17 @@
         
         // 交互状态
         let state = {
-            expansion: 1.0,       // 粒子扩散度
-            turbulence: 0.2,      // 扰动程度
-            rotationVel: 0.0,     // 额外的旋转速度 (手势控制)
-            baseSpeed: 0.002      // 基础自转速度
+            expansion: 1.0,       
+            turbulence: 0.2,      
+            rotationVel: 0.0,     
+            baseSpeed: 0.002      
         };
         let targetState = { expansion: 1.0, turbulence: 0.2, rotationVel: 0.0 };
 
-        // --- 1. 场景初始化 ---
         function initScene() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x000205); // 极深蓝黑背景
-            scene.fog = new THREE.FogExp2(0x000205, 0.02); // 雾气融合
+            scene.background = new THREE.Color(0x000205); 
+            scene.fog = new THREE.FogExp2(0x000205, 0.02); 
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
             camera.position.z = 45;
@@ -118,7 +117,6 @@
             });
         }
 
-        // --- 2. 创建细腻粒子系统 (Shader) ---
         function createParticles() {
             const geometry = new THREE.BufferGeometry();
             const positions = [];
@@ -127,30 +125,23 @@
             const sizes = [];
 
             for (let i = 0; i < CONFIG.count; i++) {
-                // 球体分布算法 (更均匀)
                 const u = Math.random();
                 const v = Math.random();
                 const theta = 2 * Math.PI * u;
                 const phi = Math.acos(2 * v - 1);
                 
-                // 增加一些随机深度，不只是一个空心壳，而是一个有厚度的云团
                 const r = CONFIG.radius * (0.8 + Math.random() * 0.4); 
-
                 const x = r * Math.sin(phi) * Math.cos(theta);
                 const y = r * Math.sin(phi) * Math.sin(theta);
                 const z = r * Math.cos(phi);
 
                 positions.push(x, y, z);
-
-                // 随机属性用于动画
                 randomness.push(Math.random(), Math.random(), Math.random());
 
-                // 颜色渐变：根据深度混合
                 const mixRatio = Math.random();
                 const c = new THREE.Color().lerpColors(CONFIG.colorInner, CONFIG.colorOuter, mixRatio);
                 colors.push(c.r, c.g, c.b);
 
-                // 粒子大小随机 (模拟尘埃大小不一)
                 sizes.push(Math.random() * 1.5 + 0.5);
             }
 
@@ -159,8 +150,6 @@
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
             geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
 
-            // 自定义 Shader (解决粗糙感的关键)
-            // 我们直接在 Shader 里画圆，而不是用贴图，这样无限放大边缘也是圆滑的
             material = new THREE.ShaderMaterial({
                 uniforms: {
                     uTime: { value: 0 },
@@ -179,34 +168,29 @@
                     varying vec3 vColor;
                     varying float vAlpha;
 
-                    // 噪声函数
-                    float random (in vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233)))* 43758.5453123); }
-
                     void main() {
                         vColor = color;
                         vec3 pos = position;
 
-                        // 1. 基础呼吸
+                        // 呼吸
                         float breath = sin(uTime * 1.5 + randomness.x * 10.0) * 0.5;
                         
-                        // 2. 爆炸/扩散逻辑
-                        vec3 dir = normalize(pos); // 从中心向外的方向
-                        
-                        // 扰动位置
+                        // 扩散计算
+                        vec3 dir = normalize(pos);
                         pos += dir * breath * uTurbulence; 
-                        pos += dir * (uExpansion - 1.0) * 20.0 * randomness.y; // 炸开时随机飞散
                         
-                        // 3. 整体缩放
+                        // 修正：爆炸范围不再那么夸张，更凝聚
+                        float expFactor = max(0.0, uExpansion - 1.0);
+                        pos += dir * expFactor * 12.0 * randomness.y; 
+                        
+                        // 整体缩放
                         pos *= uExpansion;
 
                         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
                         gl_Position = projectionMatrix * mvPosition;
 
-                        // 4. 大小计算 (近大远小)
-                        // 细腻的关键：这里不设太大的上限，防止出现大马赛克
+                        // 粒子大小控制
                         gl_PointSize = size * (200.0 / -mvPosition.z);
-                        
-                        // 根据距离淡出
                         vAlpha = smoothstep(60.0, 40.0, length(mvPosition.xyz)); 
                     }
                 `,
@@ -215,22 +199,14 @@
                     varying float vAlpha;
 
                     void main() {
-                        // 【核心优化】程序化画圆
-                        // 计算当前像素点距离中心的距离 (0.0 到 0.5)
                         float d = distance(gl_PointCoord, vec2(0.5));
-                        
-                        // 如果超出半径，直接丢弃 (变为圆形)
                         if(d > 0.5) discard;
-
-                        // 制作柔和边缘 (Soft Glow)
-                        // 使用 smoothstep 让中心实，边缘极度柔和
                         float glow = 1.0 - smoothstep(0.0, 0.5, d);
-                        glow = pow(glow, 2.0); // 增强中心亮度，让边缘更淡
-
+                        glow = pow(glow, 2.0); 
                         gl_FragColor = vec4(vColor, vAlpha * glow);
                     }
                 `,
-                blending: THREE.AdditiveBlending, // 叠加发光模式
+                blending: THREE.AdditiveBlending,
                 depthWrite: false,
                 transparent: true
             });
@@ -239,50 +215,68 @@
             scene.add(particles);
         }
 
-        // --- 3. 手势与动画循环 ---
+        // --- 核心：优化后的手势识别算法 ---
         
-        function detectGesture(landmarks) {
-            const wrist = landmarks[0];
-            const tips = [4, 8, 12, 16, 20].map(i => landmarks[i]); // 5指指尖
+        // 辅助：判断某根手指是否弯曲 (Folded)
+        // 逻辑：指尖(Tip) 到 指根(MCP) 的距离，如果小于 指关节(PIP) 到 指根(MCP) 的距离，说明弯曲了
+        function isFingerFolded(lm, tipIdx, pipIdx, mcpIdx) {
+            const getDist = (a, b) => Math.sqrt(Math.pow(a.x-b.x, 2) + Math.pow(a.y-b.y, 2) + Math.pow(a.z-b.z, 2));
+            const tipToMcp = getDist(lm[tipIdx], lm[mcpIdx]);
+            const pipToMcp = getDist(lm[pipIdx], lm[mcpIdx]);
+            // 放宽判断：只要指尖离指根很近，或者比第二关节还近，就算弯曲
+            return tipToMcp < pipToMcp * 1.2; // 1.2 是容差系数
+        }
+
+        function detectGesture(lm) {
+            // 状态：Index(食指), Middle(中指), Ring(无名指), Pinky(小指)
+            // 拇指(Thumb)比较特殊，这里主要用四指判断
             
-            // 计算指尖到手腕距离
-            const dists = tips.map(p => Math.sqrt(Math.pow(p.x-wrist.x, 2) + Math.pow(p.y-wrist.y, 2)));
-            const avgDist = dists.reduce((a,b)=>a+b) / 5;
+            const indexFolded = isFingerFolded(lm, 8, 6, 5);
+            const middleFolded = isFingerFolded(lm, 12, 10, 9);
+            const ringFolded = isFingerFolded(lm, 16, 14, 13);
+            const pinkyFolded = isFingerFolded(lm, 20, 18, 17);
 
-            // 1. 握拳 (FIST) -> 收缩
-            if (avgDist < 0.15) return 'FIST';
+            const foldedCount = (indexFolded?1:0) + (middleFolded?1:0) + (ringFolded?1:0) + (pinkyFolded?1:0);
 
-            // 2. 张手 (OPEN) -> 炸开
-            if (avgDist > 0.35) return 'OPEN';
+            // 1. 握拳 (FIST): 4根手指都弯曲 (拇指不强制)
+            if (foldedCount === 4) {
+                return 'FIST';
+            }
 
-            // 3. 互动旋转 (ROTATE) -> 食指伸出
-            // 判断逻辑：食指伸直，小指弯曲
-            const indexOut = dists[1] > 0.25;
-            const pinkyIn = dists[4] < 0.2;
-            if (indexOut && pinkyIn) return 'ROTATE';
+            // 2. 互动/指向 (POINT/ROTATE): 只有食指伸直，其他三指弯曲
+            // 这种逻辑不依赖角度，即使食指指向屏幕（变短），只要其他手指是弯的，就能识别
+            if (!indexFolded && middleFolded && ringFolded && pinkyFolded) {
+                return 'ROTATE';
+            }
+
+            // 3. 张手 (OPEN): 至少3根手指是直的
+            // 防止稍微弯一点就被判为握拳
+            if (foldedCount <= 1) {
+                return 'OPEN';
+            }
 
             return 'IDLE';
         }
 
         function updateState() {
-            // 平滑插值 (Lerp) 让动画更跟手但有惯性
             const lerpSpeed = 0.08;
             state.expansion += (targetState.expansion - state.expansion) * lerpSpeed;
             state.turbulence += (targetState.turbulence - state.turbulence) * lerpSpeed;
             state.rotationVel += (targetState.rotationVel - state.rotationVel) * lerpSpeed;
 
-            // 更新 Shader
             if (material) {
                 material.uniforms.uTime.value = time;
                 material.uniforms.uExpansion.value = state.expansion;
                 material.uniforms.uTurbulence.value = state.turbulence;
             }
 
-            // 应用旋转 (基础自转 + 手势控制)
             if (particles) {
                 particles.rotation.y += state.baseSpeed + state.rotationVel;
-                particles.rotation.x += state.rotationVel * 0.2; // 稍微带一点上下倾斜
+                particles.rotation.x += state.rotationVel * 0.2; 
             }
+
+            // 调试显示
+            // document.getElementById('debug-info').innerText = `Exp: ${state.expansion.toFixed(2)}`;
         }
 
         function animate() {
@@ -292,7 +286,6 @@
             renderer.render(scene, camera);
         }
 
-        // --- 4. MediaPipe 初始化 ---
         function initMediaPipe() {
             if (!window.Hands) { setTimeout(initMediaPipe, 100); return; }
 
@@ -303,47 +296,38 @@
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     const lm = results.multiHandLandmarks[0];
                     const gesture = detectGesture(lm);
+                    
+                    document.getElementById('debug-info').innerText = `Gesture: ${gesture}`;
 
                     if (gesture === 'OPEN') {
-                        // 炸开
-                        targetState.expansion = 3.0;
-                        targetState.turbulence = 2.0;
+                        // 调整：幅度减小 (3.0 -> 1.8)
+                        targetState.expansion = 1.8;
+                        targetState.turbulence = 1.5;
                         targetState.rotationVel = 0;
                     } 
                     else if (gesture === 'FIST') {
-                        // 收缩
-                        targetState.expansion = 0.3;
+                        // 调整：不再缩得太小 (0.3 -> 0.6)
+                        targetState.expansion = 0.6;
                         targetState.turbulence = 0.0;
                         targetState.rotationVel = 0;
                     } 
                     else if (gesture === 'ROTATE') {
-                        // 【新功能】手指滑动旋转
                         targetState.expansion = 1.0;
                         targetState.turbulence = 0.5;
 
-                        // 获取食指尖的 X 坐标 (0.0 左 -> 1.0 右)
+                        // 旋转逻辑保持不变
                         const indexTipX = lm[8].x;
-                        
-                        // 映射逻辑：
-                        // 如果手指在屏幕左侧 (x < 0.4)，向左旋转
-                        // 如果手指在屏幕右侧 (x > 0.6)，向右旋转
-                        // 中间则是停止
-                        if (indexTipX < 0.4) {
-                            targetState.rotationVel = 0.05; // 向左转
-                        } else if (indexTipX > 0.6) {
-                            targetState.rotationVel = -0.05; // 向右转
-                        } else {
-                            targetState.rotationVel = 0.0;
-                        }
+                        if (indexTipX < 0.4) targetState.rotationVel = 0.08; 
+                        else if (indexTipX > 0.6) targetState.rotationVel = -0.08; 
+                        else targetState.rotationVel = 0.0;
                     } 
                     else {
-                        // 待机
+                        // IDLE
                         targetState.expansion = 1.0;
                         targetState.turbulence = 0.2;
                         targetState.rotationVel = 0;
                     }
                 } else {
-                    // 无手势
                     targetState.expansion = 1.0;
                     targetState.rotationVel = 0;
                 }
