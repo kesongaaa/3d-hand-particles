@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 深空天体系统 (中文版)</title>
+    <title>Three.js 纯净宇宙</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000205; font-family: 'Microsoft YaHei', 'Heiti SC', sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #000205; font-family: sans-serif; }
         
+        /* 隐藏视频，只保留逻辑 */
         #video-container { display: none; }
 
+        /* 仅保留加载圆圈，文字也去掉了 */
         #loader {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: #000205; display: flex; flex-direction: column;
@@ -17,41 +19,12 @@
         }
         
         .spinner {
-            width: 60px; height: 60px;
+            width: 50px; height: 50px;
             border: 2px solid rgba(255, 255, 255, 0.1);
-            border-top: 2px solid #fff;
+            border-top: 2px solid #00d2ff; /* 科技蓝 */
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin-bottom: 20px;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-        }
-        
-        .loading-text {
-            color: #fff; font-size: 16px; letter-spacing: 4px; opacity: 0.8;
-            text-transform: uppercase; font-weight: bold;
-        }
-
-        /* 顶部 HUD */
-        #hud {
-            position: absolute; top: 30px; width: 100%; text-align: center;
-            pointer-events: none; z-index: 10;
-        }
-        
-        #planet-name {
-            font-size: 36px; font-weight: 800; letter-spacing: 8px;
-            color: rgba(255, 255, 255, 0.95);
-            text-shadow: 0 0 30px rgba(255, 255, 255, 0.6);
-            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        #planet-desc {
-            font-size: 14px; color: rgba(255, 255, 255, 0.5); margin-top: 8px; letter-spacing: 3px;
-        }
-        
-        #debug-info {
-            position: fixed; bottom: 20px; right: 20px;
-            font-size: 14px; color: rgba(255,255,255,0.3); font-family: monospace;
-            text-align: right;
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);
         }
 
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -66,16 +39,8 @@
 
     <div id="loader">
         <div class="spinner"></div>
-        <div class="loading-text">正在初始化宇宙模型...</div>
     </div>
     
-    <div id="hud">
-        <div id="planet-name">银河旋臂</div>
-        <div id="planet-desc">类型：棒旋星系 | 结构：活跃</div>
-    </div>
-
-    <div id="debug-info">系统就绪 - 等待手势</div>
-
     <div id="video-container">
         <video id="input-video" playsinline></video>
     </div>
@@ -92,39 +57,39 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // --- 天体预设 (中文版) ---
+        // --- 天体预设 ---
         const PRESETS = [
             {
-                name: "银河旋臂",
-                desc: "数千亿恒星组成的螺旋结构",
-                type: "GALAXY",
-                cInner: 0xffaa00, // 核心黄/白
-                cOuter: 0x0055ff, // 旋臂蓝
-                turbulence: 0.2
+                // 1. 超新星爆发 (替换了原来的银河)
+                // 结构：核心 + 巨大的球形冲击波壳层
+                type: "SUPERNOVA",
+                cInner: 0xffaa00, // 核心：热烈的金橙色
+                cOuter: 0xff0044, // 外壳：深红/绯红
+                turbulence: 0.4   // 比较躁动
             },
             {
-                name: "超大质量黑洞",
-                desc: "视界边缘与高温吸积盘",
+                // 2. 黑洞
+                // 结构：吸积盘 (扁平环)
                 type: "BLACK_HOLE",
-                cInner: 0xff3300, // 吸积盘内圈：赤红
-                cOuter: 0xffaa00, // 吸积盘外圈：金黄
+                cInner: 0xff5500, // 赤红
+                cOuter: 0xaa8800, // 金黄
                 turbulence: 0.1 
             },
             {
-                name: "中子脉冲星",
-                desc: "高能粒子双极喷流",
+                // 3. 脉冲星
+                // 结构：双极喷流
                 type: "PULSAR",
-                cInner: 0xffffff, // 极亮白
-                cOuter: 0x00ffff, // 青色电离
+                cInner: 0xffffff, // 白
+                cOuter: 0x00ffff, // 青
                 turbulence: 1.5 
             },
             {
-                name: "暗物质星云",
-                desc: "未知的电离气体云团",
+                // 4. 星云
+                // 结构：不规则云团
                 type: "NEBULA",
                 cInner: 0xff00ff, // 洋红
                 cOuter: 0x4400ff, // 深紫
-                turbulence: 0.4
+                turbulence: 0.3
             }
         ];
 
@@ -165,7 +130,7 @@
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
             camera.position.z = 50;
-            camera.position.y = 10; 
+            camera.position.y = 5; 
             camera.lookAt(0,0,0);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -189,37 +154,51 @@
                 const i3 = i*3;
                 let x,y,z;
 
-                if (type === "GALAXY") {
-                    const arms = 3; 
-                    const armIndex = i % arms;
-                    const radius = Math.pow(Math.random(), 2) * 25; 
-                    const spinAngle = radius * 0.8; 
-                    const armAngle = (Math.PI * 2 / arms) * armIndex;
+                if (type === "SUPERNOVA") {
+                    // 超新星结构：
+                    // 30% 粒子在核心 (小球)
+                    // 70% 粒子在冲击波壳层 (大空心球壳)
                     
-                    const angle = spinAngle + armAngle + (Math.random()-0.5)*0.5; 
-
-                    x = Math.cos(angle) * radius;
-                    z = Math.sin(angle) * radius;
-                    const thickness = (1 - (radius/25)) * 3 * (Math.random()-0.5);
-                    y = thickness;
+                    if (Math.random() < 0.3) {
+                        // 核心
+                        const r = 6 * Math.cbrt(Math.random()); 
+                        const theta = Math.random() * Math.PI * 2;
+                        const phi = Math.acos(2*Math.random()-1);
+                        x = r * Math.sin(phi) * Math.cos(theta);
+                        y = r * Math.sin(phi) * Math.sin(theta);
+                        z = r * Math.cos(phi);
+                    } else {
+                        // 冲击波壳层 (Shell)
+                        // 半径在 20 到 25 之间
+                        const r = 20 + Math.random() * 5; 
+                        const theta = Math.random() * Math.PI * 2;
+                        const phi = Math.acos(2*Math.random()-1);
+                        
+                        x = r * Math.sin(phi) * Math.cos(theta);
+                        y = r * Math.sin(phi) * Math.sin(theta);
+                        z = r * Math.cos(phi);
+                        
+                        // 增加一些随机破损感，让壳层不那么完美
+                        if (Math.random() < 0.1) {
+                            x *= 1.2; y *= 1.2; z *= 1.2; // 飞溅碎片
+                        }
+                    }
                 }
                 else if (type === "BLACK_HOLE") {
+                    // 吸积盘 (扁平)
                     const minR = 6;  
-                    const maxR = 22; 
+                    const maxR = 25; 
                     
                     const r = minR + Math.pow(Math.random(), 2) * (maxR - minR);
                     const angle = Math.random() * Math.PI * 2;
                     
                     x = Math.cos(angle) * r;
                     z = Math.sin(angle) * r;
-                    y = (Math.random() - 0.5) * 0.5;
-
-                    if (Math.random() < 0.05) {
-                        x *= 0.1; z *= 0.1;
-                        y = (Math.random() - 0.5) * 20; 
-                    }
+                    // 极薄
+                    y = (Math.random() - 0.5) * 0.8; 
                 }
                 else if (type === "PULSAR") {
+                    // 脉冲星 (喷流)
                     if (Math.random() < 0.3) {
                         const r = 3 * Math.cbrt(Math.random());
                         const theta = Math.random() * Math.PI * 2;
@@ -229,7 +208,7 @@
                         z = r * Math.cos(phi);
                     } else {
                         const h = (Math.random() - 0.5) * 60; 
-                        const rJet = 0.5 + Math.abs(h) * 0.05; 
+                        const rJet = 0.5 + Math.abs(h) * 0.08; 
                         const angle = Math.random() * Math.PI * 2;
                         x = Math.cos(angle) * rJet * Math.random();
                         z = Math.sin(angle) * rJet * Math.random();
@@ -237,18 +216,19 @@
                     }
                 }
                 else if (type === "NEBULA") {
+                    // 不规则星云
                     const clusters = 5;
                     const clusterIdx = i % clusters;
                     const centers = [
                         {x:0, y:0, z:0},
-                        {x:10, y:5, z:0},
-                        {x:-10, y:-5, z:5},
-                        {x:0, y:10, z:-5},
-                        {x:5, y:-8, z:8}
+                        {x:12, y:6, z:0},
+                        {x:-12, y:-6, z:6},
+                        {x:0, y:12, z:-6},
+                        {x:6, y:-10, z:10}
                     ];
                     const center = centers[clusterIdx];
                     
-                    const r = 8 * Math.pow(Math.random(), 0.5);
+                    const r = 9 * Math.pow(Math.random(), 0.5);
                     const theta = Math.random() * Math.PI * 2;
                     const phi = Math.acos(2*Math.random()-1);
                     
@@ -314,32 +294,41 @@
                     void main() {
                         vec3 pos = position;
 
+                        // 距离着色
                         float dist = length(pos) / 25.0;
                         dist = clamp(dist, 0.0, 1.0);
                         
                         vColor = mix(uColorInner, uColorOuter, dist);
-                        vColor += (randomness - 0.5) * 0.1;
+                        vColor += (randomness - 0.5) * 0.15; // 增加色彩杂质
 
-                        float angle = uTime * 0.2 * (1.0 / (dist + 0.1));
+                        // 旋转 (模拟自转)
+                        float angle = uTime * 0.1 * (1.0 / (dist + 0.2));
+                        // 仅做简单的绕Y轴扰动，防止形状过度扭曲
                         
-                        float breath = sin(uTime * 2.0 + randomness.x * 20.0) * 0.3;
+                        // 动态呼吸
+                        float breath = sin(uTime * 1.5 + randomness.x * 20.0) * 0.3;
                         
                         vec3 dir = normalize(pos);
                         if(length(pos) < 0.1) dir = vec3(0.0, 1.0, 0.0);
                         
+                        // 扰动
                         pos += dir * breath * uTurbulence; 
                         
+                        // 爆炸/收缩
                         float expFactor = max(0.0, uExpansion - 1.0);
                         pos += dir * expFactor * 15.0 * randomness.y; 
                         
+                        // 整体缩放
                         pos *= uExpansion;
 
                         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
                         gl_Position = projectionMatrix * mvPosition;
 
-                        float sizeMult = (1.0 - dist) * 1.5 + 0.5;
+                        // 粒子大小
+                        float sizeMult = (1.0 - dist) * 1.5 + 0.6;
                         gl_PointSize = size * sizeMult * (300.0 / -mvPosition.z);
                         
+                        // 透明度
                         vAlpha = smoothstep(100.0, 40.0, length(mvPosition.xyz)); 
                     }
                 `,
@@ -351,10 +340,11 @@
                         float d = distance(gl_PointCoord, vec2(0.5));
                         if(d > 0.5) discard;
                         
+                        // 高亮中心
                         float glow = 1.0 - smoothstep(0.0, 0.5, d);
                         glow = pow(glow, 2.5); 
                         
-                        vec3 finalColor = vColor * 1.5; 
+                        vec3 finalColor = vColor * 1.8; // 整体提亮
 
                         gl_FragColor = vec4(finalColor, vAlpha * glow);
                     }
@@ -380,21 +370,6 @@
 
             const p = PRESETS[currentPresetIndex];
             
-            // UI 更新
-            const nameEl = document.getElementById('planet-name');
-            const descEl = document.getElementById('planet-desc');
-            nameEl.style.opacity = 0;
-            descEl.style.opacity = 0;
-            
-            setTimeout(() => {
-                nameEl.innerText = p.name;
-                descEl.innerText = p.desc;
-                nameEl.style.opacity = 1;
-                nameEl.style.transform = "scale(1.1)";
-                descEl.style.opacity = 1;
-                setTimeout(() => nameEl.style.transform = "scale(1.0)", 300);
-            }, 200);
-
             // 物理更新
             targetPositions = calculateShapePositions(p.type);
             targetState.cInner.setHex(p.cInner);
@@ -419,7 +394,7 @@
             state.cInner.lerp(targetState.cInner, colorLerpSpeed);
             state.cOuter.lerp(targetState.cOuter, colorLerpSpeed);
 
-            // Morphing
+            // Morphing (粒子位置插值)
             const positions = particles.geometry.attributes.position.array;
             for(let i=0; i<COUNT; i++) {
                 const i3 = i*3;
@@ -467,7 +442,6 @@
             const ringBent = isFingerBent(lm, 16, 13);
             const pinkyBent = isFingerBent(lm, 20, 17);
 
-            // 挥手逻辑
             const currX = 1.0 - lm[9].x; 
             const velocity = currX - lastHandX;
             lastHandX = currX;
@@ -485,16 +459,6 @@
             return 'IDLE';
         }
 
-        // 中文手势映射
-        const GESTURE_MAP = {
-            'SWIPE_RIGHT': '向右挥动 - 下个星体',
-            'SWIPE_LEFT': '向左挥动 - 上个星体',
-            'OPEN': '手掌张开 - 能量扩散',
-            'FIST': '紧握拳头 - 引力坍缩',
-            'ROTATE': '单指旋转 - 维度操控',
-            'IDLE': '待机 - 自由漂浮'
-        };
-
         function initMediaPipe() {
             if (!window.Hands) { setTimeout(initMediaPipe, 100); return; }
 
@@ -510,9 +474,6 @@
                     // 位置映射
                     targetState.posX = (0.5 - lm[9].x) * 60; 
                     targetState.posY = (0.5 - lm[9].y) * 40; 
-
-                    const debugEl = document.getElementById('debug-info');
-                    debugEl.innerText = `检测手势: ${GESTURE_MAP[gesture] || gesture}`;
 
                     if (gesture === 'SWIPE_RIGHT') switchPreset(1);
                     else if (gesture === 'SWIPE_LEFT') switchPreset(-1);
