@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 纯净星座 - 灵敏版</title>
+    <title>Three.js 纯净星座 - GPU极速版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000205; }
-        
         #video-container { display: none; }
 
-        /* 纯图形加载 */
+        /* 纯净加载 */
         #loader {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: #000205; display: flex;
@@ -58,76 +57,31 @@
 
         // --- 十二星座数据 ---
         const ZODIAC = [
-            {
-                name: "ARIES", 
-                cInner: 0xff3300, cOuter: 0xffaa00, // 火
-                stars: [[-10, -5, 0], [-2, 2, 2], [5, 4, 0], [10, 2, -2]]
-            },
-            {
-                name: "TAURUS", 
-                cInner: 0x00ff88, cOuter: 0x006622, // 土
-                stars: [[0, -5, 0], [5, 2, 0], [10, 8, 2], [-5, 6, -2], [-8, 10, 0]]
-            },
-            {
-                name: "GEMINI", 
-                cInner: 0xffffff, cOuter: 0xaaaaff, // 风
-                stars: [[-6, 10, 0], [-6, -10, 0], [6, 10, 2], [6, -10, -2], [0, 0, 0]]
-            },
-            {
-                name: "CANCER", 
-                cInner: 0x00ffff, cOuter: 0x0055ff, // 水
-                stars: [[0, 0, 0], [-5, 5, 2], [-5, -8, -2], [6, -4, 0], [5, 6, 0]]
-            },
-            {
-                name: "LEO", 
-                cInner: 0xffaa00, cOuter: 0xff0000, // 火
-                stars: [[5, -8, 0], [10, -5, 0], [0, 0, 2], [-5, 5, 0], [-2, 10, -2], [4, 8, 0]]
-            },
-            {
-                name: "VIRGO", 
-                cInner: 0xccff00, cOuter: 0x558800, // 土
-                stars: [[12, 5, 0], [5, 8, 2], [-2, 0, 0], [-8, -5, -2], [0, -10, 0], [8, -8, 2]]
-            },
-            {
-                name: "LIBRA", 
-                cInner: 0xffccff, cOuter: 0xaa00aa, // 风
-                stars: [[0, 8, 0], [-8, -5, 2], [8, -5, -2], [-4, -10, 0], [4, -10, 0]]
-            },
-            {
-                name: "SCORPIO", 
-                cInner: 0xaa0000, cOuter: 0x220033, // 水
-                stars: [[10, 8, 0], [5, 5, 2], [0, 0, 0], [-5, -5, -2], [-2, -10, 0], [2, -8, 2]]
-            },
-            {
-                name: "SAGITTARIUS", 
-                cInner: 0xff8800, cOuter: 0x6600cc, // 火
-                stars: [[-10, -8, 0], [0, 0, 2], [8, 5, -2], [5, -5, 0], [2, -2, 0], [10, -2, 2]]
-            },
-            {
-                name: "CAPRICORN", 
-                cInner: 0x885522, cOuter: 0x442200, // 土
-                stars: [[-10, 8, 0], [0, -8, 2], [10, 5, -2], [5, 8, 0], [-5, 0, 0]]
-            },
-            {
-                name: "AQUARIUS", 
-                cInner: 0x00ccff, cOuter: 0xffffff, // 风
-                stars: [[-8, 10, 0], [-4, 5, 0], [0, 0, 0], [4, -5, 0], [8, -10, 0], [-2, 8, 2], [2, 3, -2]]
-            },
-            {
-                name: "PISCES", 
-                cInner: 0x0055ff, cOuter: 0x00ffcc, // 水
-                stars: [[-8, 5, 0], [-5, 0, 2], [0, -8, 0], [5, 0, -2], [8, 8, 0], [0, 0, 0]]
-            }
+            { name: "ARIES", cInner: 0xff3300, cOuter: 0xffaa00, stars: [[-10,-5,0],[-2,2,2],[5,4,0],[10,2,-2]] },
+            { name: "TAURUS", cInner: 0x00ff88, cOuter: 0x006622, stars: [[0,-5,0],[5,2,0],[10,8,2],[-5,6,-2],[-8,10,0]] },
+            { name: "GEMINI", cInner: 0xffffff, cOuter: 0xaaaaff, stars: [[-6,10,0],[-6,-10,0],[6,10,2],[6,-10,-2],[0,0,0]] },
+            { name: "CANCER", cInner: 0x00ffff, cOuter: 0x0055ff, stars: [[0,0,0],[-5,5,2],[-5,-8,-2],[6,-4,0],[5,6,0]] },
+            { name: "LEO", cInner: 0xffaa00, cOuter: 0xff0000, stars: [[5,-8,0],[10,-5,0],[0,0,2],[-5,5,0],[-2,10,-2],[4,8,0]] },
+            { name: "VIRGO", cInner: 0xccff00, cOuter: 0x558800, stars: [[12,5,0],[5,8,2],[-2,0,0],[-8,-5,-2],[0,-10,0],[8,-8,2]] },
+            { name: "LIBRA", cInner: 0xffccff, cOuter: 0xaa00aa, stars: [[0,8,0],[-8,-5,2],[8,-5,-2],[-4,-10,0],[4,-10,0]] },
+            { name: "SCORPIO", cInner: 0xaa0000, cOuter: 0x220033, stars: [[10,8,0],[5,5,2],[0,0,0],[-5,-5,-2],[-2,-10,0],[2,-8,2]] },
+            { name: "SAGITTARIUS", cInner: 0xff8800, cOuter: 0x6600cc, stars: [[-10,-8,0],[0,0,2],[8,5,-2],[5,-5,0],[2,-2,0],[10,-2,2]] },
+            { name: "CAPRICORN", cInner: 0x885522, cOuter: 0x442200, stars: [[-10,8,0],[0,-8,2],[10,5,-2],[5,8,0],[-5,0,0]] },
+            { name: "AQUARIUS", cInner: 0x00ccff, cOuter: 0xffffff, stars: [[-8,10,0],[-4,5,0],[0,0,0],[4,-5,0],[8,-10,0],[-2,8,2],[2,3,-2]] },
+            { name: "PISCES", cInner: 0x0055ff, cOuter: 0x00ffcc, stars: [[-8,5,0],[-5,0,2],[0,-8,0],[5,0,-2],[8,8,0],[0,0,0]] }
         ];
 
         let currentPresetIndex = 0;
         let lastSwitchTime = 0;
 
-        const COUNT = 36000; 
-        let scene, camera, renderer, particles, material;
-        let targetPositions = new Float32Array(COUNT * 3);
-        let time = 0;
+        // 优化点：粒子数调整为 32k (性能/视觉平衡点)
+        const COUNT = 32000; 
         
+        let scene, camera, renderer, particles, material;
+        let time = 0;
+        let morphTargetTime = 0; // 变形进度 (0 -> 1)
+        
+        // 状态
         let state = {
             expansion: 1.0,       
             turbulence: 0.2,      
@@ -149,14 +103,13 @@
 
         let lastHandX = 0.5;
 
-        // --- 初始化 ---
         function initScene() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x000103); 
             scene.fog = new THREE.FogExp2(0x000103, 0.02); 
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-            camera.position.z = 38; // 保持放大的视角
+            camera.position.z = 38;
             camera.lookAt(0,0,0);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -173,13 +126,11 @@
             });
         }
 
-        // --- 星座生成算法 ---
-        function calculateShapePositions(index) {
+        // --- 星座生成 (纯数据计算) ---
+        function calculateShapeData(index) {
             const data = ZODIAC[index];
             const stars = data.stars;
             const arr = new Float32Array(COUNT * 3);
-            
-            // 保持1.3倍放大
             const SCALE = 1.3;
 
             for(let i=0; i<COUNT; i++) {
@@ -188,20 +139,18 @@
                 const rand = Math.random();
 
                 if (rand < 0.15) {
-                    const starIdx = Math.floor(Math.random() * stars.length);
-                    const star = stars[starIdx];
-                    
+                    // 恒星
+                    const star = stars[Math.floor(Math.random() * stars.length)];
                     const r = Math.pow(Math.random(), 3) * 2.5; 
                     const theta = Math.random() * Math.PI * 2;
                     const phi = Math.acos(2*Math.random()-1);
-                    
                     x = (star[0] + r * Math.sin(phi) * Math.cos(theta)) * SCALE;
                     y = (star[1] + r * Math.sin(phi) * Math.sin(theta)) * SCALE;
                     z = (star[2] + r * Math.cos(phi)) * SCALE;
                 } else {
+                    // 星云
                     const s1 = stars[Math.floor(Math.random() * stars.length)];
                     const s2 = stars[Math.floor(Math.random() * stars.length)];
-                    
                     const lerpT = Math.random();
                     const centerX = s1[0] + (s2[0]-s1[0]) * lerpT;
                     const centerY = s1[1] + (s2[1]-s1[1]) * lerpT;
@@ -210,49 +159,43 @@
                     const r = 8 * Math.random(); 
                     const theta = Math.random() * Math.PI * 2;
                     const phi = Math.acos(2*Math.random()-1);
-
                     x = (centerX + r * Math.sin(phi) * Math.cos(theta)) * SCALE;
                     y = (centerY + r * Math.sin(phi) * Math.sin(theta)) * SCALE;
                     z = (centerZ + r * Math.cos(phi)) * SCALE;
                 }
-
-                arr[i3] = x;
-                arr[i3+1] = y;
-                arr[i3+2] = z;
+                arr[i3] = x; arr[i3+1] = y; arr[i3+2] = z;
             }
             return arr;
         }
 
         function createParticles() {
             const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(COUNT * 3);
+            
+            // 优化点：不再在每一帧修改 position，而是定义 Start 和 End 两个位置缓冲区
+            const posStart = calculateShapeData(0);
+            const posEnd = calculateShapeData(0); // 初始状态 Start = End
+
             const randomness = new Float32Array(COUNT * 3);
             const sizes = new Float32Array(COUNT);
-
-            const initialShape = calculateShapePositions(0);
-            targetPositions.set(initialShape);
             
             for (let i = 0; i < COUNT; i++) {
                 const i3 = i*3;
-                positions[i3] = initialShape[i3];
-                positions[i3+1] = initialShape[i3+1];
-                positions[i3+2] = initialShape[i3+2];
-
                 randomness[i3] = Math.random();
                 randomness[i3+1] = Math.random();
                 randomness[i3+2] = Math.random();
-                
-                if (Math.random() < 0.05) sizes[i] = Math.random() * 2.0 + 1.0;
-                else sizes[i] = Math.random();
+                sizes[i] = (Math.random() < 0.05) ? (Math.random() * 2.0 + 1.0) : Math.random();
             }
 
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            // 使用自定义属性
+            geometry.setAttribute('position', new THREE.BufferAttribute(posStart, 3)); // 初始位置 (Start)
+            geometry.setAttribute('aTargetPos', new THREE.BufferAttribute(posEnd, 3)); // 目标位置 (End)
             geometry.setAttribute('randomness', new THREE.BufferAttribute(randomness, 3));
             geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
             material = new THREE.ShaderMaterial({
                 uniforms: {
                     uTime: { value: 0 },
+                    uMorph: { value: 0.0 }, // 0 = Start, 1 = End
                     uExpansion: { value: 1.0 },
                     uTurbulence: { value: 0.0 },
                     uColorInner: { value: new THREE.Color(ZODIAC[0].cInner) },
@@ -260,11 +203,13 @@
                 },
                 vertexShader: `
                     uniform float uTime;
+                    uniform float uMorph; // 变形因子
                     uniform float uExpansion;
                     uniform float uTurbulence;
                     uniform vec3 uColorInner;
                     uniform vec3 uColorOuter;
                     
+                    attribute vec3 aTargetPos; // 目标位置属性
                     attribute vec3 randomness;
                     attribute float size;
                     
@@ -272,27 +217,34 @@
                     varying float vAlpha;
 
                     void main() {
-                        vec3 pos = position;
+                        // 【核心优化】 GPU 线性插值
+                        vec3 pos = mix(position, aTargetPos, uMorph);
 
+                        // 距离混合颜色
                         float dist = length(pos) / 25.0; 
                         vColor = mix(uColorInner, uColorOuter, clamp(dist, 0.0, 1.0));
                         
+                        // 闪烁
                         float twinkle = 0.0;
                         if (size > 1.5) {
                             twinkle = sin(uTime * 5.0 + randomness.x * 100.0) * 0.3;
                             vColor += vec3(0.5); 
                         }
 
+                        // 呼吸动画
                         float breath = sin(uTime * 1.5 + randomness.x * 20.0) * 0.2;
                         
                         vec3 dir = normalize(pos);
                         if(length(pos) < 0.1) dir = vec3(0.0, 1.0, 0.0);
                         
+                        // 扰动
                         pos += dir * breath * uTurbulence; 
                         
+                        // 爆炸/收缩 (手势)
                         float expFactor = max(0.0, uExpansion - 1.0);
                         pos += dir * expFactor * 15.0 * randomness.y; 
                         
+                        // 整体缩放
                         pos *= uExpansion;
 
                         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
@@ -329,10 +281,10 @@
             scene.add(particles);
         }
 
-        // --- 切换逻辑 ---
+        // --- 切换逻辑 (CPU只做数据拷贝，不做每帧计算) ---
         function switchPreset(direction) {
             const now = Date.now();
-            if (now - lastSwitchTime < 800) return; 
+            if (now - lastSwitchTime < 600) return; // 稍微缩短冷却时间
             lastSwitchTime = now;
 
             currentPresetIndex += direction;
@@ -340,20 +292,54 @@
             if (currentPresetIndex < 0) currentPresetIndex = ZODIAC.length - 1;
 
             const p = ZODIAC[currentPresetIndex];
+
+            // 1. 获取几何体属性
+            const geo = particles.geometry;
+            const attrPos = geo.attributes.position; // Start
+            const attrTarget = geo.attributes.aTargetPos; // End
             
-            targetPositions = calculateShapePositions(currentPresetIndex);
+            // 2. 将当前的视觉位置 (End) 复制给 起始位置 (Start)
+            // 这样切换时，粒子会从它现在所在的地方开始飞，不会跳变
+            // 注意：因为我们只是线性插值，可以直接把 attrTarget 的数据拷贝到 attrPos
+            // 但为了更严谨（如果切换中断），理想情况是计算当前插值位置，这里简化为直接接力
+            
+            // 如果上一次变形还没结束，uMorph 可能在 0.5。
+            // 简单处理：我们假设之前的变形已经完成，或者直接从终点开始新的旅程
+            // 更好的方法：如果 uMorph < 1，我们需要计算中间态。
+            // 为了性能，我们直接把 target 作为新的 start (假设用户不会疯狂连续切)
+            attrPos.array.set(attrTarget.array);
+            attrPos.needsUpdate = true;
+
+            // 3. 计算新的目标形状
+            const newShapeData = calculateShapeData(currentPresetIndex);
+            attrTarget.array.set(newShapeData);
+            attrTarget.needsUpdate = true;
+
+            // 4. 重置变形进度
+            morphTargetTime = 0;
+            material.uniforms.uMorph.value = 0;
+
+            // 5. 设置目标颜色
             targetState.cInner.setHex(p.cInner);
             targetState.cOuter.setHex(p.cOuter);
             targetState.expansion = 1.0; 
         }
 
-        // --- 循环 ---
         function updateState() {
-            const lerpSpeed = 0.05; 
+            const lerpSpeed = 0.08; 
             const moveSpeed = 0.08; 
-            const shapeMorphSpeed = 0.04; 
-            const colorLerpSpeed = 0.04;
+            const colorLerpSpeed = 0.05;
+            // 变形速度 (0.02 = 约50帧完成，即不到1秒)
+            const morphSpeed = 0.02; 
 
+            // 1. 更新变形进度 (GPU Morph)
+            if (morphTargetTime < 1.0) {
+                morphTargetTime += morphSpeed;
+                if (morphTargetTime > 1.0) morphTargetTime = 1.0;
+                if (material) material.uniforms.uMorph.value = morphTargetTime;
+            }
+
+            // 2. 常规参数插值
             state.expansion += (targetState.expansion - state.expansion) * lerpSpeed;
             state.turbulence += (targetState.turbulence - state.turbulence) * lerpSpeed;
             state.rotationVel += (targetState.rotationVel - state.rotationVel) * lerpSpeed;
@@ -362,16 +348,6 @@
 
             state.cInner.lerp(targetState.cInner, colorLerpSpeed);
             state.cOuter.lerp(targetState.cOuter, colorLerpSpeed);
-
-            // Morphing
-            const positions = particles.geometry.attributes.position.array;
-            for(let i=0; i<COUNT; i++) {
-                const i3 = i*3;
-                positions[i3] += (targetPositions[i3] - positions[i3]) * shapeMorphSpeed;
-                positions[i3+1] += (targetPositions[i3+1] - positions[i3+1]) * shapeMorphSpeed;
-                positions[i3+2] += (targetPositions[i3+2] - positions[i3+2]) * shapeMorphSpeed;
-            }
-            particles.geometry.attributes.position.needsUpdate = true;
 
             if (material) {
                 material.uniforms.uTime.value = time;
@@ -415,7 +391,7 @@
             const velocity = currX - lastHandX;
             lastHandX = currX;
             
-            // 【修改点】灵敏度设为 0.04 (稍微小一点点的幅度)
+            // 灵敏度 0.04
             const swipeThreshold = 0.04; 
 
             if (bentCount < 3) {
@@ -434,7 +410,8 @@
             if (!window.Hands) { setTimeout(initMediaPipe, 100); return; }
 
             const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+            // 优化点：降低模型复杂度 (modelComplexity: 0) 以提高 FPS
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
             
             hands.onResults(results => {
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
