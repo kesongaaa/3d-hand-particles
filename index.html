@@ -3,19 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 高能粒子核心</title>
+    <title>Three.js 赛博粒子核心</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
-        canvas { display: block; }
+        body { margin: 0; overflow: hidden; background-color: #000510; font-family: 'Segoe UI', sans-serif; }
         
-        /* 摄像头预览 - 增加发光边框 */
+        /* 视频预览窗口 - 加上发光边框 */
         #video-container {
             position: absolute;
             bottom: 20px;
             left: 20px;
-            width: 180px;
-            height: 135px;
-            border-radius: 8px;
+            width: 160px;
+            height: 120px;
+            border-radius: 12px;
             overflow: hidden;
             border: 2px solid #00ffff;
             box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
@@ -23,50 +22,41 @@
             background: #000;
         }
         #input-video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1);
+            width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);
         }
 
-        /* 顶部状态栏 - 更醒目 */
-        #status-bar {
+        /* 状态文字 */
+        #status-display {
             position: absolute;
-            top: 40px;
-            width: 100%;
-            text-align: center;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
             pointer-events: none;
-            z-index: 10;
+            text-align: center;
+            z-index: 5;
         }
-        
-        .hud-text {
-            color: #fff;
-            font-size: 24px;
-            font-weight: bold;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 10px 30px;
-            border-radius: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            text-shadow: 0 0 15px rgba(0, 200, 255, 1);
-            letter-spacing: 2px;
-            transition: all 0.2s;
+        .gesture-name {
+            font-size: 80px;
+            font-weight: 800;
+            color: rgba(255, 255, 255, 0.1);
+            text-transform: uppercase;
+            letter-spacing: 10px;
+            transition: all 0.3s ease;
+        }
+        /* 激活时的文字发光 */
+        .active-text {
+            color: rgba(0, 255, 255, 0.8);
+            text-shadow: 0 0 30px #00ffff;
+            transform: scale(1.2);
         }
 
         #loader {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #000;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: #00ffff;
-            z-index: 100;
-            font-size: 20px;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000510; display: flex; align-items: center; justify-content: center;
+            color: #00ffff; z-index: 100;
         }
     </style>
 
-    <!-- 引入 MediaPipe -->
+    <!-- MediaPipe 依赖 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -74,19 +64,17 @@
 </head>
 <body>
 
-    <div id="loader">
-        <div>⚡ 正在充能视觉核心...</div>
-    </div>
+    <div id="loader"><h1>系统启动中...</h1></div>
     
-    <div id="status-bar">
-        <div id="gesture-text" class="hud-text">准备就绪</div>
+    <div id="status-display">
+        <div id="gesture-name" class="gesture-name">SYSTEM READY</div>
     </div>
 
     <div id="video-container">
         <video id="input-video" playsinline></video>
     </div>
 
-    <!-- 引入 Three.js -->
+    <!-- Three.js 依赖 -->
     <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
     <script type="importmap">
         {
@@ -101,346 +89,330 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // --- 配置: 增强亮度和尺寸 ---
+        // --- 核心配置 ---
         const CONFIG = {
-            particleCount: 20000, 
-            bg: 0x000000 
+            count: 15000,         // 粒子总数 (减少数量以换取单个粒子的高质量渲染)
+            coreSize: 8,          // 核心球体半径
+            scatterSize: 60,      // 散布范围
+            baseColor: new THREE.Color('#0055ff'), // 深蓝
+            glowColor: new THREE.Color('#00ffff'), // 青色高光
         };
 
-        let scene, camera, renderer, particleSystem;
-        let positions, targetPositions, sizes;
-        let currentGesture = 'NONE';
-        
+        let scene, camera, renderer, material;
+        let particles, geometry;
+        let time = 0;
+
         // 状态变量
         let state = {
-            expansion: 1.0,
-            noiseStrength: 0.2,
-            coreHeat: 0.0, // 新增：核心热度（改变颜色）
-            rotationSpeed: 0.001
+            scale: 1.0,           // 整体膨胀系数
+            dispersal: 0.0,       // 炸散程度 (0 = 聚集, 1 = 炸飞)
+            coreTightness: 1.0,   // 核心紧密度
+            rotationSpeed: 0.2,   // 旋转速度
+            gestureName: ''
         };
-
         let targetState = { ...state };
 
-        function initScene() {
+        // --- 1. 场景初始化 ---
+        function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(CONFIG.bg);
-            // 雾气调淡，让远处粒子更清晰
-            scene.fog = new THREE.FogExp2(CONFIG.bg, 0.01);
+            // 背景不是纯黑，而是带有极淡的蓝色雾气，增加空间感
+            scene.fog = new THREE.FogExp2(0x000510, 0.015);
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 50; // 拉远一点视角
+            camera.position.set(0, 0, 50);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            
+            // 开启这种混合模式有助于产生强烈的光感
+            renderer.setClearColor(0x000510);
             document.body.appendChild(renderer.domElement);
 
             const controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.autoRotate = true;
-            controls.autoRotateSpeed = 0.8;
+            controls.autoRotateSpeed = 0.5;
 
             createParticles();
-            window.addEventListener('resize', onWindowResize);
-        }
-
-        function createParticles() {
-            const geometry = new THREE.BufferGeometry();
-            positions = new Float32Array(CONFIG.particleCount * 3);
-            targetPositions = new Float32Array(CONFIG.particleCount * 3);
-            sizes = new Float32Array(CONFIG.particleCount);
             
-            // 初始形状：球体
-            calculateShape('SPHERE');
-            positions.set(targetPositions);
-
-            // 初始大小：大幅增加基础大小
-            for(let i=0; i<CONFIG.particleCount; i++) {
-                sizes[i] = Math.random() * 1.5 + 0.5; // 0.5 ~ 2.0
-            }
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-
-            // Shader: 增强发光感
-            constmaterial = new THREE.ShaderMaterial({
-                uniforms: {
-                    colorCore: { value: new THREE.Color(0xffffff) }, // 核心白
-                    colorEdge: { value: new THREE.Color(0x0088ff) }, // 边缘蓝
-                    pointTexture: { value: createGlowTexture() },
-                    mixFactor: { value: 0.0 } // 用于变色
-                },
-                vertexShader: `
-                    attribute float size;
-                    varying float vAlpha;
-                    varying float vDist;
-                    uniform float mixFactor;
-
-                    void main() {
-                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                        
-                        // 距离越近，粒子越大 (从 300 改为 800，极大增强视觉体积)
-                        gl_PointSize = size * (800.0 / -mvPosition.z);
-                        
-                        gl_Position = projectionMatrix * mvPosition;
-                        
-                        // 计算距离中心的距离，用于颜色混合
-                        vDist = length(position);
-                        
-                        // 基础透明度
-                        vAlpha = 1.0; 
-                    }
-                `,
-                fragmentShader: `
-                    uniform vec3 colorCore;
-                    uniform vec3 colorEdge;
-                    uniform sampler2D pointTexture;
-                    uniform float mixFactor;
-                    varying float vAlpha;
-                    varying float vDist;
-
-                    void main() {
-                        // 颜色根据距离插值：中心亮白，边缘深蓝
-                        // mixFactor 越高，整体越红/热
-                        vec3 finalColor = mix(colorEdge, colorCore, 1.0 - smoothstep(0.0, 30.0, vDist));
-                        
-                        // 如果处于高能状态(mixFactor大)，叠加火红色
-                        finalColor = mix(finalColor, vec3(1.0, 0.2, 0.1), mixFactor * 0.8);
-
-                        gl_FragColor = vec4(finalColor, vAlpha) * texture2D(pointTexture, gl_PointCoord);
-                    }
-                `,
-                blending: THREE.AdditiveBlending, // 关键：叠加混合，越叠越亮
-                depthTest: false,
-                transparent: true
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
             });
-
-            particleSystem = new THREE.Points(geometry, constmaterial);
-            scene.add(particleSystem);
         }
 
-        // 形状计算
-        function calculateShape(type) {
-            const arr = targetPositions;
-            for (let i = 0; i < CONFIG.particleCount; i++) {
-                const i3 = i * 3;
-                let x, y, z;
+        // --- 2. 创建超亮粒子系统 ---
+        function createParticles() {
+            geometry = new THREE.BufferGeometry();
+            
+            const positions = [];
+            const randoms = []; // 用于动画的随机偏移
+            const sizes = [];   // 粒子基础大小
+            const colors = [];  // 粒子颜色
 
-                if (type === 'SPHERE' || type === 'FIST') {
-                    // 球体：但如果FIST，我们会在update中缩放它，这里只管形状
-                    // 增加一些体积感，R=15
-                    const r = 15 * Math.cbrt(Math.random()); 
+            const color1 = CONFIG.baseColor;
+            const color2 = CONFIG.glowColor;
+
+            for (let i = 0; i < CONFIG.count; i++) {
+                // 两种分布模式：
+                // 30% 是核心致密球体 (高亮，小而密)
+                // 70% 是周围漂浮的尘埃 (大光斑，范围广)
+                const isCore = Math.random() < 0.35; 
+
+                let x, y, z, r;
+                
+                if (isCore) {
+                    // 核心：高斯分布，聚集在中心
                     const theta = Math.random() * Math.PI * 2;
                     const phi = Math.acos(2 * Math.random() - 1);
+                    r = CONFIG.coreSize * Math.pow(Math.random(), 0.5); // 稍微实心一点
                     x = r * Math.sin(phi) * Math.cos(theta);
                     y = r * Math.sin(phi) * Math.sin(theta);
                     z = r * Math.cos(phi);
-                } 
-                else if (type === 'RING') {
-                    // 环状
-                    const rMain = 18; 
-                    const tube = 2;   
-                    const u = Math.random() * Math.PI * 2;
-                    const v = Math.random() * Math.PI * 2;
-                    x = (rMain + tube * Math.cos(v)) * Math.cos(u);
-                    y = (rMain + tube * Math.cos(v)) * Math.sin(u);
-                    z = tube * Math.sin(v) * 2.0; // 拉厚一点
                     
-                    // 放射线
-                    if (Math.random() > 0.9) {
-                        x *= 1.5; y *= 1.5; z *= 5.0;
+                    sizes.push(Math.random() * 1.5 + 0.5); // 核心粒子较小但密集
+                    
+                    // 核心颜色偏青白
+                    colors.push(color2.r, color2.g, color2.b); 
+                } else {
+                    // 外部：均匀散布在更大的空间
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    r = CONFIG.coreSize + Math.random() * (CONFIG.scatterSize - CONFIG.coreSize);
+                    x = r * Math.sin(phi) * Math.cos(theta);
+                    y = r * Math.sin(phi) * Math.sin(theta);
+                    z = r * Math.cos(phi);
+
+                    // 外部粒子：有大有小，模拟景深光斑
+                    // 极少数粒子特别大（Bokeh效果）
+                    if (Math.random() < 0.1) {
+                        sizes.push(Math.random() * 10 + 5); 
+                    } else {
+                        sizes.push(Math.random() * 3 + 1);
                     }
+
+                    // 外部颜色偏深蓝，带一点青色混合
+                    const mixRatio = Math.random();
+                    colors.push(
+                        color1.r * mixRatio + color2.r * (1-mixRatio),
+                        color1.g * mixRatio + color2.g * (1-mixRatio),
+                        color1.b * mixRatio + color2.b * (1-mixRatio)
+                    );
                 }
 
-                arr[i3] = x;
-                arr[i3+1] = y;
-                arr[i3+2] = z;
+                positions.push(x, y, z);
+                randoms.push(Math.random(), Math.random(), Math.random());
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('aRandom', new THREE.Float32BufferAttribute(randoms, 3));
+            geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            // --- 关键：自定义 Shader 材质 ---
+            // 这比普通 PointsMaterial 能做更多特效
+            material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uScale: { value: 1.0 },       // 手势控制：整体缩放
+                    uDispersal: { value: 0.0 },   // 手势控制：炸开程度
+                    uTexture: { value: getTexture() }
+                },
+                vertexShader: `
+                    uniform float uTime;
+                    uniform float uScale;
+                    uniform float uDispersal;
+                    attribute float size;
+                    attribute vec3 aRandom;
+                    attribute vec3 color;
+                    varying vec3 vColor;
+                    varying float vAlpha;
+
+                    void main() {
+                        vColor = color;
+                        
+                        vec3 pos = position;
+
+                        // 1. 基础呼吸动画
+                        pos += sin(uTime * 2.0 + aRandom * 10.0) * 0.2;
+
+                        // 2. 爆炸效果 (Dispersal)
+                        // 沿着法线方向炸开
+                        vec3 dir = normalize(pos);
+                        pos += dir * uDispersal * 60.0 * aRandom.x; // 随机炸得更远
+
+                        // 3. 整体缩放 (Scale)
+                        pos *= uScale;
+
+                        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                        gl_Position = projectionMatrix * mvPosition;
+
+                        // 4. 大小衰减 (Size Attenuation)
+                        // 距离相机越近越大，模拟景深
+                        gl_PointSize = size * (300.0 / -mvPosition.z);
+                        
+                        // 限制最大光斑
+                        gl_PointSize = clamp(gl_PointSize, 0.0, 150.0);
+
+                        // 5. 根据距离调整透明度
+                        float dist = length(mvPosition.xyz);
+                        vAlpha = smoothstep(100.0, 0.0, dist); // 远处渐隐
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D uTexture;
+                    varying vec3 vColor;
+                    varying float vAlpha;
+
+                    void main() {
+                        // 获取纹理颜色
+                        vec4 texColor = texture2D(uTexture, gl_PointCoord);
+                        
+                        // 如果纹理太黑（透明部分），直接丢弃，优化性能
+                        if (texColor.a < 0.05) discard;
+
+                        // 颜色增强：让中心更亮白
+                        vec3 finalColor = vColor * 2.0; 
+
+                        gl_FragColor = vec4(finalColor, vAlpha * texColor.a);
+                    }
+                `,
+                blending: THREE.AdditiveBlending, // 加法混合，关键！产生发光叠加效果
+                depthWrite: false,
+                transparent: true
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        // 生成高斯模糊的光斑纹理
+        function getTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            
+            // 绘制辉光
+            const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            g.addColorStop(0, 'rgba(255, 255, 255, 1)'); // 中心极亮
+            g.addColorStop(0.3, 'rgba(100, 200, 255, 0.5)');
+            g.addColorStop(0.5, 'rgba(0, 50, 100, 0.2)');
+            g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 64, 64);
+            
+            const tex = new THREE.CanvasTexture(canvas);
+            return tex;
+        }
+
+        // --- 3. 手势逻辑 ---
+        function detectGesture(landmarks) {
+            const wrist = landmarks[0];
+            const tips = [4, 8, 12, 16, 20].map(i => landmarks[i]);
+            
+            // 计算指尖到手腕的平均距离
+            let avgDist = 0;
+            tips.forEach(t => {
+                avgDist += Math.sqrt(Math.pow(t.x-wrist.x, 2) + Math.pow(t.y-wrist.y, 2) + Math.pow(t.z-wrist.z, 2));
+            });
+            avgDist /= 5;
+
+            // 握拳：所有手指缩成一团
+            if (avgDist < 0.15) return 'FIST';
+            
+            // 张开：所有手指伸展
+            if (avgDist > 0.35) return 'OPEN';
+
+            // 指向：仅食指伸直 (简单判断：食指远，小指近)
+            const indexDist = Math.sqrt(Math.pow(tips[1].x-wrist.x, 2) + Math.pow(tips[1].y-wrist.y, 2));
+            const pinkyDist = Math.sqrt(Math.pow(tips[4].x-wrist.x, 2) + Math.pow(tips[4].y-wrist.y, 2));
+            if (indexDist > 0.3 && pinkyDist < 0.2) return 'POINT';
+
+            return 'IDLE';
+        }
+
+        function updateState() {
+            // 平滑过渡 (Lerp)
+            const speed = 0.05;
+            state.scale += (targetState.scale - state.scale) * speed;
+            state.dispersal += (targetState.dispersal - state.dispersal) * speed;
+            
+            // 更新 Shader Uniforms
+            if (material) {
+                material.uniforms.uTime.value = time;
+                material.uniforms.uScale.value = state.scale;
+                material.uniforms.uDispersal.value = state.dispersal;
+            }
+
+            // UI 文字更新
+            const ui = document.getElementById('gesture-name');
+            ui.innerText = state.gestureName;
+            if (state.gestureName !== 'SYSTEM READY' && state.gestureName !== '') {
+                ui.classList.add('active-text');
+            } else {
+                ui.classList.remove('active-text');
             }
         }
 
-        function updateInteractionState() {
-            // 平滑过渡
-            const lerpSpeed = 0.08;
-            state.expansion += (targetState.expansion - state.expansion) * lerpSpeed;
-            state.noiseStrength += (targetState.noiseStrength - state.noiseStrength) * lerpSpeed;
-            state.coreHeat += (targetState.coreHeat - state.coreHeat) * lerpSpeed;
-
-            // 更新 Shader 颜色参数
-            particleSystem.material.uniforms.mixFactor.value = state.coreHeat;
-            
-            const posAttr = particleSystem.geometry.attributes.position;
-            const sizeAttr = particleSystem.geometry.attributes.size;
-            const time = Date.now() * 0.001;
-
-            for(let i=0; i < CONFIG.particleCount; i++) {
-                const i3 = i * 3;
-
-                const tx = targetPositions[i3];
-                const ty = targetPositions[i3+1];
-                const tz = targetPositions[i3+2];
-
-                // 噪点计算
-                const noiseX = Math.sin(time * 2 + ty * 0.05) * state.noiseStrength;
-                const noiseY = Math.cos(time * 2 + tx * 0.05) * state.noiseStrength;
-                const noiseZ = Math.sin(time * 2 + i) * state.noiseStrength;
-
-                // 位置更新
-                posAttr.array[i3]     = tx * state.expansion + noiseX;
-                posAttr.array[i3 + 1] = ty * state.expansion + noiseY;
-                posAttr.array[i3 + 2] = tz * state.expansion + noiseZ;
-
-                // 动态大小：核心处粒子更大
-                // 呼吸效果
-                const pulse = 1.0 + Math.sin(time * 5) * 0.1;
-                // 注意：这里不再设置为0，保证粒子永远可见
-                sizeAttr.array[i] = sizes[i] * pulse; 
-            }
-
-            posAttr.needsUpdate = true;
-            sizeAttr.needsUpdate = true;
-            
-            // 旋转速度随状态变化 (聚能时旋转更快)
-            const baseRot = 0.002;
-            particleSystem.rotation.y += baseRot * (1 + state.coreHeat * 5.0);
+        // --- 4. 循环与 MediaPipe ---
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+            updateState();
+            renderer.render(scene, camera);
         }
 
-        // --- MediaPipe ---
         function initMediaPipe() {
-            if (!window.Hands || !window.Camera) {
-                setTimeout(initMediaPipe, 500);
-                return;
-            }
+            if (!window.Hands) { setTimeout(initMediaPipe, 100); return; }
 
             const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
-            hands.onResults(onHandResults);
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+            
+            hands.onResults(results => {
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const gesture = detectGesture(results.multiHandLandmarks[0]);
+                    
+                    if (gesture === 'OPEN') {
+                        targetState.scale = 1.2;       // 稍微变大
+                        targetState.dispersal = 1.0;   // 剧烈炸开！
+                        state.gestureName = "DISPERSE";
+                    } else if (gesture === 'FIST') {
+                        targetState.scale = 0.1;       // 极度浓缩
+                        targetState.dispersal = 0.0;   // 聚拢
+                        state.gestureName = "COLLAPSE";
+                    } else if (gesture === 'POINT') {
+                        targetState.scale = 1.0;
+                        targetState.dispersal = 0.2;   // 轻微浮动
+                        state.gestureName = "FOCUS";
+                        // 指向时旋转加速
+                        particles.rotation.y += 0.02; 
+                        particles.rotation.x += 0.01;
+                    } else {
+                        targetState.scale = 1.0;
+                        targetState.dispersal = 0.0;
+                        state.gestureName = "";
+                    }
+                } else {
+                    // 无手势，恢复默认呼吸
+                    targetState.scale = 1.0;
+                    targetState.dispersal = 0.1; // 默认带一点点散开，比较自然
+                    state.gestureName = "";
+                }
+            });
 
             const cam = new window.Camera(document.getElementById('input-video'), {
                 onFrame: async () => await hands.send({image: document.getElementById('input-video')}),
                 width: 320, height: 240
             });
-            cam.start().then(() => {
-                document.getElementById('loader').style.display = 'none';
-            });
+            cam.start().then(() => document.getElementById('loader').style.display = 'none');
         }
 
-        function onHandResults(results) {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const lm = results.multiHandLandmarks[0];
-                const gesture = detectGesture(lm);
-                if (gesture !== currentGesture) {
-                    currentGesture = gesture;
-                    applyGestureEffect(gesture);
-                }
-            } else {
-                if (currentGesture !== 'NONE') {
-                    currentGesture = 'NONE';
-                    applyGestureEffect('NONE');
-                }
-            }
-        }
-
-        function detectGesture(landmarks) {
-            const wrist = landmarks[0];
-            const tips = [landmarks[4], landmarks[8], landmarks[12], landmarks[16], landmarks[20]];
-            const dists = tips.map(tip => Math.sqrt(
-                Math.pow(tip.x - wrist.x, 2) + Math.pow(tip.y - wrist.y, 2) + Math.pow(tip.z - wrist.z, 2)
-            ));
-
-            const isFist = dists.every(d => d < 0.28); 
-            if (isFist) return 'FIST';
-
-            const indexExtended = dists[1] > 0.35; // 稍微放宽一点判断
-            const othersCurled = dists[2] < 0.3 && dists[3] < 0.3 && dists[4] < 0.3;
-            if (indexExtended && othersCurled) return 'POINT';
-
-            const isOpen = dists.every(d => d > 0.3);
-            if (isOpen) return 'OPEN';
-
-            return 'NEUTRAL';
-        }
-
-        function applyGestureEffect(gesture) {
-            const textEl = document.getElementById('gesture-text');
-            
-            switch(gesture) {
-                case 'OPEN':
-                    textEl.innerText = "🖐 爆发模式";
-                    textEl.style.textShadow = "0 0 20px #00ffff";
-                    textEl.style.color = "#fff";
-                    
-                    targetState.expansion = 2.8;      // 炸得更开
-                    targetState.noiseStrength = 2.0;  // 剧烈抖动
-                    targetState.coreHeat = 0.0;       // 保持蓝色
-                    calculateShape('SPHERE'); 
-                    break;
-
-                case 'POINT':
-                    textEl.innerText = "☝️ 能量环";
-                    textEl.style.textShadow = "0 0 20px #ff00ff";
-                    textEl.style.color = "#ffddff";
-
-                    targetState.expansion = 1.0;
-                    targetState.noiseStrength = 0.2;
-                    targetState.coreHeat = 0.5;       // 微微发紫
-                    calculateShape('RING'); 
-                    break;
-
-                case 'FIST':
-                    textEl.innerText = "✊ 核心聚能";
-                    textEl.style.textShadow = "0 0 20px #ff4400";
-                    textEl.style.color = "#ffaa00";
-
-                    // 关键修改：不再是消散，而是变成高亮核心
-                    targetState.expansion = 0.3;      // 紧密聚合
-                    targetState.noiseStrength = 0.5;  // 高频振动
-                    targetState.coreHeat = 1.0;       // 变红/变亮
-                    calculateShape('FIST');
-                    break;
-
-                default: 
-                    textEl.innerText = "等待指令...";
-                    textEl.style.textShadow = "0 0 10px #0088ff";
-                    textEl.style.color = "#ddd";
-
-                    targetState.expansion = 1.2;      // 默认稍大一点
-                    targetState.noiseStrength = 0.3;
-                    targetState.coreHeat = 0.0;
-                    calculateShape('SPHERE');
-                    break;
-            }
-        }
-
-        function createGlowTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 64; canvas.height = 64; // 贴图分辨率加大
-            const ctx = canvas.getContext('2d');
-            const grad = ctx.createRadialGradient(32,32,0, 32,32,32);
-            // 核心更白，边缘更硬一点，防止太糊
-            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            grad.addColorStop(0.3, 'rgba(200, 240, 255, 0.8)');
-            grad.addColorStop(0.6, 'rgba(0, 100, 255, 0.2)');
-            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0,0,64,64);
-            return new THREE.CanvasTexture(canvas);
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            updateInteractionState();
-            renderer.render(scene, camera);
-        }
-
-        initScene();
-        initMediaPipe();
+        init();
         animate();
+        initMediaPipe();
 
     </script>
 </body>
