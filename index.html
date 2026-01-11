@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 深度手势粒子</title>
+    <title>Three.js 灵动核心</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000205; font-family: sans-serif; }
         
@@ -36,7 +36,6 @@
             text-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
         }
 
-        /* 调试文字，帮你确认当前识别到的手势和距离 */
         #debug-info {
             position: absolute; top: 10px; right: 10px; text-align: right;
             color: rgba(255,255,255,0.4); font-size: 12px; pointer-events: none; font-family: monospace;
@@ -57,10 +56,7 @@
         <div class="loading-text">正在初始化视觉核心...</div>
     </div>
     
-    <div id="debug-info">
-        Gesture: --<br>
-        Hand Size: --
-    </div>
+    <div id="debug-info">System Ready</div>
 
     <div id="video-container">
         <video id="input-video" playsinline></video>
@@ -94,10 +90,20 @@
             expansion: 1.0,       
             turbulence: 0.2,      
             rotationVel: 0.0,     
-            baseSpeed: 0.002      
+            baseSpeed: 0.002,
+            // 新增：位置状态
+            posX: 0,
+            posY: 0
         };
+        
         // 目标状态
-        let targetState = { expansion: 1.0, turbulence: 0.2, rotationVel: 0.0 };
+        let targetState = { 
+            expansion: 1.0, 
+            turbulence: 0.2, 
+            rotationVel: 0.0,
+            posX: 0,
+            posY: 0
+        };
 
         function initScene() {
             scene = new THREE.Scene();
@@ -179,21 +185,21 @@
                         // 呼吸
                         float breath = sin(uTime * 1.5 + randomness.x * 10.0) * 0.5;
                         
-                        // 扩散计算
+                        // 扩散
                         vec3 dir = normalize(pos);
                         pos += dir * breath * uTurbulence; 
                         
-                        // 爆炸
+                        // 爆炸/收缩偏移
                         float expFactor = max(0.0, uExpansion - 1.0);
                         pos += dir * expFactor * 10.0 * randomness.y; 
                         
-                        // 整体缩放 (压缩或放大)
+                        // 整体缩放
                         pos *= uExpansion;
 
                         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
                         gl_Position = projectionMatrix * mvPosition;
 
-                        // 粒子大小控制
+                        // 粒子大小 (深度感)
                         gl_PointSize = size * (200.0 / -mvPosition.z);
                         vAlpha = smoothstep(60.0, 40.0, length(mvPosition.xyz)); 
                     }
@@ -219,74 +225,62 @@
             scene.add(particles);
         }
 
-        // --- 增强版手势算法 ---
+        // --- 手势与位置算法 ---
 
-        // 计算两点距离
         const getDist = (a, b) => Math.sqrt(Math.pow(a.x-b.x, 2) + Math.pow(a.y-b.y, 2));
 
-        // 判断手指是否弯曲 (严格版)
-        // 逻辑：如果 指尖到手腕的距离 < 指根到手腕距离 * 阈值，则认为弯曲
-        // Index=8, Middle=12, Ring=16, Pinky=20
-        // MCP(指根)=5, 9, 13, 17
         function isFingerBent(lm, tipIdx, mcpIdx) {
             const tipToWrist = getDist(lm[tipIdx], lm[0]);
             const mcpToWrist = getDist(lm[mcpIdx], lm[0]);
-            
-            // 阈值说明：如果是伸直的，指尖肯定比指根远很多 (ratio > 1.5)
-            // 如果是弯曲的，指尖会掉下来，距离变短
             return tipToWrist < mcpToWrist * 1.3; 
         }
 
         function detectGesture(lm) {
-            // 1. 获取手掌大小 (近似距离)
-            // 使用手腕到中指指根的距离作为标尺
             const palmSize = getDist(lm[0], lm[9]);
 
-            // 2. 状态判定
             const indexBent = isFingerBent(lm, 8, 5);
             const middleBent = isFingerBent(lm, 12, 9);
             const ringBent = isFingerBent(lm, 16, 13);
             const pinkyBent = isFingerBent(lm, 20, 17);
-
-            // 统计弯曲的手指数量 (不含大拇指，大拇指太灵活容易误判)
             const bentCount = (indexBent?1:0) + (middleBent?1:0) + (ringBent?1:0) + (pinkyBent?1:0);
 
             let gesture = 'IDLE';
 
-            // --- 判定逻辑 ---
-            
-            // 握拳: 4指全弯
-            if (bentCount === 4) {
-                gesture = 'FIST';
-            }
-            // 张手: 4指全直 (严格模式，防止半握拳被判为张手)
-            else if (bentCount === 0) {
-                gesture = 'OPEN';
-            }
-            // 旋转: 食指直，其他弯
-            else if (!indexBent && middleBent && ringBent && pinkyBent) {
-                gesture = 'ROTATE';
-            }
+            if (bentCount === 4) gesture = 'FIST';
+            else if (bentCount === 0) gesture = 'OPEN';
+            else if (!indexBent && middleBent && ringBent && pinkyBent) gesture = 'ROTATE';
 
             return { type: gesture, palmSize: palmSize, indexTipX: lm[8].x };
         }
 
         function updateState() {
-            // Lerp 速度
-            const lerpSpeed = 0.1;
+            const lerpSpeed = 0.08; // 状态插值速度
+            const moveSpeed = 0.08; // 位置跟随速度
+
+            // 1. 状态平滑
             state.expansion += (targetState.expansion - state.expansion) * lerpSpeed;
             state.turbulence += (targetState.turbulence - state.turbulence) * lerpSpeed;
             state.rotationVel += (targetState.rotationVel - state.rotationVel) * lerpSpeed;
+            
+            // 2. 位置平滑跟随 (核心新增逻辑)
+            state.posX += (targetState.posX - state.posX) * moveSpeed;
+            state.posY += (targetState.posY - state.posY) * moveSpeed;
 
+            // 更新 Shader 参数
             if (material) {
                 material.uniforms.uTime.value = time;
                 material.uniforms.uExpansion.value = state.expansion;
                 material.uniforms.uTurbulence.value = state.turbulence;
             }
 
+            // 更新物体位置与旋转
             if (particles) {
                 particles.rotation.y += state.baseSpeed + state.rotationVel;
                 particles.rotation.x += state.rotationVel * 0.2; 
+                
+                // 应用位置移动
+                particles.position.x = state.posX;
+                particles.position.y = state.posY;
             }
         }
 
@@ -309,26 +303,36 @@
                     const data = detectGesture(lm);
                     
                     const gesture = data.type;
-                    const size = data.palmSize; // 范围大概在 0.1 (远) 到 0.4 (近/贴脸)
+                    const size = data.palmSize;
 
-                    // 调试显示
-                    document.getElementById('debug-info').innerHTML = `Gesture: ${gesture}<br>Size: ${size.toFixed(3)}`;
+                    // --- 计算位置映射 ---
+                    // MediaPipe 坐标: x:0(左)-1(右), y:0(上)-1(下)
+                    // 视频被镜像翻转了 (transform: scaleX(-1))
+                    // 所以: 
+                    // 手向右移 -> landmarks[9].x 变小 (因为镜像) -> 需要映射到 ThreeJS 的正X
+                    // 手向上移 -> landmarks[9].y 变小 -> 需要映射到 ThreeJS 的正Y
+                    
+                    const handCenterX = lm[9].x; // 使用中指指根作为手掌中心
+                    const handCenterY = lm[9].y;
 
+                    // 映射范围：大约 -35 到 +35
+                    // (0.5 - x) * 倍率: 0.5是中心点
+                    targetState.posX = (0.5 - handCenterX) * 60; 
+                    targetState.posY = (0.5 - handCenterY) * 40; 
+
+                    // 调试文字
+                    document.getElementById('debug-info').innerHTML = 
+                        `Gesture: ${gesture}<br>Pos: ${targetState.posX.toFixed(1)}, ${targetState.posY.toFixed(1)}`;
+
+                    // --- 手势逻辑 ---
                     if (gesture === 'OPEN') {
-                        // 张手：统一为中等偏大的散开，不随距离变得太夸张
                         targetState.expansion = 1.6;
                         targetState.turbulence = 1.2; 
                         targetState.rotationVel = 0;
                     } 
                     else if (gesture === 'FIST') {
-                        // 【核心修改】握拳距离感
-                        // 基础大小 0.5
-                        // 如果 size > 0.2 (手很近)，我们会急剧减小 expansion
-                        // 映射算法：手越近(size越大)，值越小
                         let distFactor = Math.max(0.1, 1.0 - (size - 0.15) * 4.0); 
-                        // 限制最大值为1.0
                         distFactor = Math.min(1.0, distFactor);
-
                         targetState.expansion = 0.5 * distFactor; 
                         targetState.turbulence = 0.0;
                         targetState.rotationVel = 0;
@@ -336,21 +340,21 @@
                     else if (gesture === 'ROTATE') {
                         targetState.expansion = 1.0;
                         targetState.turbulence = 0.5;
-                        
-                        // 旋转逻辑
                         if (data.indexTipX < 0.4) targetState.rotationVel = 0.08; 
                         else if (data.indexTipX > 0.6) targetState.rotationVel = -0.08; 
                         else targetState.rotationVel = 0.0;
                     } 
                     else {
-                        // IDLE (半握拳状态等)：保持默认球体
                         targetState.expansion = 1.0;
                         targetState.turbulence = 0.2;
                         targetState.rotationVel = 0;
                     }
                 } else {
+                    // 没有手时，归位到中心
                     targetState.expansion = 1.0;
                     targetState.rotationVel = 0;
+                    targetState.posX = 0;
+                    targetState.posY = 0;
                 }
             });
 
