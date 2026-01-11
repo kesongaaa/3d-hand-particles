@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 纯净宇宙 - 蓝星版</title>
+    <title>Three.js 十二星座粒子系统</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000205; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #000205; font-family: 'Microsoft YaHei', sans-serif; }
         
         #video-container { display: none; }
 
@@ -25,6 +25,26 @@
             box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);
         }
 
+        /* 简单的星座名称显示 */
+        #constellation-name {
+            position: absolute;
+            top: 10%;
+            width: 100%;
+            text-align: center;
+            font-size: 40px;
+            font-weight: bold;
+            letter-spacing: 10px;
+            color: rgba(255, 255, 255, 0.8);
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            pointer-events: none;
+            transition: opacity 0.5s;
+            opacity: 0; /* 初始隐藏，加载完显示 */
+        }
+        
+        #element-type {
+            font-size: 14px; letter-spacing: 5px; margin-top: 5px; opacity: 0.6; text-transform: uppercase;
+        }
+
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 
@@ -37,6 +57,11 @@
 
     <div id="loader">
         <div class="spinner"></div>
+    </div>
+
+    <div id="constellation-name">
+        <div id="c-name-text">白羊座</div>
+        <div id="element-type">FIRE ELEMENT</div>
     </div>
     
     <div id="video-container">
@@ -55,58 +80,88 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // --- 天体预设 ---
-        const PRESETS = [
+        // --- 十二星座数据 (简化星图坐标) ---
+        // 坐标范围大概在 -15 到 15 之间
+        const ZODIAC = [
             {
-                // 1. 蓝色能量球 (替换了原来的超新星)
-                // 结构：实心球体
-                type: "SPHERE",
-                cInner: 0x00ffff, // 核心：青色高亮
-                cOuter: 0x0033ff, // 外围：深邃蓝
-                turbulence: 0.2   // 柔和流动
+                name: "白羊座 ARIES", element: "火象 FIRE",
+                cInner: 0xff3300, cOuter: 0xffaa00, // 红/金
+                stars: [[-10, -5, 0], [-2, 2, 2], [5, 4, 0], [10, 2, -2]]
             },
             {
-                // 2. 黑洞 (保留)
-                // 结构：吸积盘 (金红)
-                type: "BLACK_HOLE",
-                cInner: 0xff5500, 
-                cOuter: 0xaa8800, 
-                turbulence: 0.1 
+                name: "金牛座 TAURUS", element: "土象 EARTH",
+                cInner: 0x00ff88, cOuter: 0x006622, // 翠绿/深绿
+                stars: [[0, -5, 0], [5, 2, 0], [10, 8, 2], [-5, 6, -2], [-8, 10, 0]]
             },
             {
-                // 3. 脉冲星 (保留)
-                // 结构：双极喷流 (青白)
-                type: "PULSAR",
-                cInner: 0xffffff, 
-                cOuter: 0x00ffff, 
-                turbulence: 1.5 
+                name: "双子座 GEMINI", element: "风象 AIR",
+                cInner: 0xffffff, cOuter: 0xaaaaff, // 白/淡蓝
+                stars: [[-6, 10, 0], [-6, -10, 0], [6, 10, 2], [6, -10, -2], [0, 0, 0]]
             },
             {
-                // 4. 星云 (保留)
-                // 结构：紫气云团
-                type: "NEBULA",
-                cInner: 0xff00ff, 
-                cOuter: 0x4400ff, 
-                turbulence: 0.3
+                name: "巨蟹座 CANCER", element: "水象 WATER",
+                cInner: 0x00ffff, cOuter: 0x0055ff, // 青/蓝
+                stars: [[0, 0, 0], [-5, 5, 2], [-5, -8, -2], [6, -4, 0], [5, 6, 0]]
+            },
+            {
+                name: "狮子座 LEO", element: "火象 FIRE",
+                cInner: 0xffaa00, cOuter: 0xff0000, // 金/红
+                stars: [[5, -8, 0], [10, -5, 0], [0, 0, 2], [-5, 5, 0], [-2, 10, -2], [4, 8, 0]]
+            },
+            {
+                name: "处女座 VIRGO", element: "土象 EARTH",
+                cInner: 0xccff00, cOuter: 0x558800, // 黄绿
+                stars: [[12, 5, 0], [5, 8, 2], [-2, 0, 0], [-8, -5, -2], [0, -10, 0], [8, -8, 2]]
+            },
+            {
+                name: "天秤座 LIBRA", element: "风象 AIR",
+                cInner: 0xffccff, cOuter: 0xaa00aa, // 粉/紫
+                stars: [[0, 8, 0], [-8, -5, 2], [8, -5, -2], [-4, -10, 0], [4, -10, 0]]
+            },
+            {
+                name: "天蝎座 SCORPIO", element: "水象 WATER",
+                cInner: 0xaa0000, cOuter: 0x220033, // 深红/暗黑
+                stars: [[10, 8, 0], [5, 5, 2], [0, 0, 0], [-5, -5, -2], [-2, -10, 0], [2, -8, 2]]
+            },
+            {
+                name: "射手座 SAGITTARIUS", element: "火象 FIRE",
+                cInner: 0xff8800, cOuter: 0x6600cc, // 橙/紫 (神秘火)
+                stars: [[-10, -8, 0], [0, 0, 2], [8, 5, -2], [5, -5, 0], [2, -2, 0], [10, -2, 2]]
+            },
+            {
+                name: "摩羯座 CAPRICORN", element: "土象 EARTH",
+                cInner: 0x885522, cOuter: 0x442200, // 棕/褐
+                stars: [[-10, 8, 0], [0, -8, 2], [10, 5, -2], [5, 8, 0], [-5, 0, 0]]
+            },
+            {
+                name: "水瓶座 AQUARIUS", element: "风象 AIR",
+                cInner: 0x00ccff, cOuter: 0xffffff, // 亮蓝/白
+                stars: [[-8, 10, 0], [-4, 5, 0], [0, 0, 0], [4, -5, 0], [8, -10, 0], [-2, 8, 2], [2, 3, -2]]
+            },
+            {
+                name: "双鱼座 PISCES", element: "水象 WATER",
+                cInner: 0x0055ff, cOuter: 0x00ffcc, // 深蓝/海蓝
+                stars: [[-8, 5, 0], [-5, 0, 2], [0, -8, 0], [5, 0, -2], [8, 8, 0], [0, 0, 0]]
             }
         ];
 
         let currentPresetIndex = 0;
         let lastSwitchTime = 0;
 
-        const COUNT = 40000; 
+        const COUNT = 36000; // 粒子数
         let scene, camera, renderer, particles, material;
         let targetPositions = new Float32Array(COUNT * 3);
         let time = 0;
         
+        // 状态
         let state = {
             expansion: 1.0,       
             turbulence: 0.2,      
             rotationVel: 0.0,     
             baseSpeed: 0.001,
             posX: 0, posY: 0,
-            cInner: new THREE.Color(PRESETS[0].cInner),
-            cOuter: new THREE.Color(PRESETS[0].cOuter)
+            cInner: new THREE.Color(ZODIAC[0].cInner),
+            cOuter: new THREE.Color(ZODIAC[0].cOuter)
         };
         
         let targetState = { 
@@ -114,8 +169,8 @@
             turbulence: 0.2, 
             rotationVel: 0.0,
             posX: 0, posY: 0,
-            cInner: new THREE.Color(PRESETS[0].cInner),
-            cOuter: new THREE.Color(PRESETS[0].cOuter)
+            cInner: new THREE.Color(ZODIAC[0].cInner),
+            cOuter: new THREE.Color(ZODIAC[0].cOuter)
         };
 
         let lastHandX = 0.5;
@@ -124,11 +179,10 @@
         function initScene() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x000103); 
-            scene.fog = new THREE.FogExp2(0x000103, 0.015); 
+            scene.fog = new THREE.FogExp2(0x000103, 0.02); 
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-            camera.position.z = 50;
-            camera.position.y = 5; 
+            camera.position.z = 45;
             camera.lookAt(0,0,0);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -138,6 +192,9 @@
 
             createParticles();
             
+            // 显示初始UI
+            updateUI();
+            
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
@@ -145,72 +202,56 @@
             });
         }
 
-        // --- 核心：天体数学模型 ---
-        function calculateShapePositions(type) {
+        // --- 核心：星座生成算法 ---
+        function calculateShapePositions(index) {
+            const data = ZODIAC[index];
+            const stars = data.stars;
             const arr = new Float32Array(COUNT * 3);
+            
             for(let i=0; i<COUNT; i++) {
                 const i3 = i*3;
                 let x,y,z;
+                const rand = Math.random();
 
-                if (type === "SPHERE") {
-                    // 标准球体算法 (蓝色能量球)
-                    const u = Math.random();
-                    const v = Math.random();
-                    // 立方根分布让球体内部也是均匀填充的，而不是只在表面
-                    const r = 14 * Math.cbrt(Math.random()); 
-                    const theta = 2 * Math.PI * u;
-                    const phi = Math.acos(2 * v - 1);
+                // 粒子分配策略：
+                // 15% 聚集在核心恒星位置 (亮星)
+                // 85% 在周围形成星云 (背景)
+                
+                if (rand < 0.15) {
+                    // 恒星点
+                    // 随机选一颗星
+                    const starIdx = Math.floor(Math.random() * stars.length);
+                    const star = stars[starIdx];
                     
-                    x = r * Math.sin(phi) * Math.cos(theta);
-                    y = r * Math.sin(phi) * Math.sin(theta);
-                    z = r * Math.cos(phi);
-                }
-                else if (type === "BLACK_HOLE") {
-                    // 吸积盘
-                    const minR = 6;  
-                    const maxR = 25; 
-                    const r = minR + Math.pow(Math.random(), 2) * (maxR - minR);
-                    const angle = Math.random() * Math.PI * 2;
-                    x = Math.cos(angle) * r;
-                    z = Math.sin(angle) * r;
-                    y = (Math.random() - 0.5) * 0.8; 
-                }
-                else if (type === "PULSAR") {
-                    // 脉冲星
-                    if (Math.random() < 0.3) {
-                        const r = 3 * Math.cbrt(Math.random());
-                        const theta = Math.random() * Math.PI * 2;
-                        const phi = Math.acos(2*Math.random()-1);
-                        x = r * Math.sin(phi) * Math.cos(theta);
-                        y = r * Math.sin(phi) * Math.sin(theta);
-                        z = r * Math.cos(phi);
-                    } else {
-                        const h = (Math.random() - 0.5) * 60; 
-                        const rJet = 0.5 + Math.abs(h) * 0.08; 
-                        const angle = Math.random() * Math.PI * 2;
-                        x = Math.cos(angle) * rJet * Math.random();
-                        z = Math.sin(angle) * rJet * Math.random();
-                        y = h;
-                    }
-                }
-                else if (type === "NEBULA") {
-                    // 星云
-                    const clusters = 5;
-                    const clusterIdx = i % clusters;
-                    const centers = [
-                        {x:0, y:0, z:0},
-                        {x:12, y:6, z:0},
-                        {x:-12, y:-6, z:6},
-                        {x:0, y:12, z:-6},
-                        {x:6, y:-10, z:10}
-                    ];
-                    const center = centers[clusterIdx];
-                    const r = 9 * Math.pow(Math.random(), 0.5);
+                    // 在恒星位置周围极小范围内随机
+                    // 制造出“光球”的感觉
+                    const r = Math.pow(Math.random(), 3) * 2.5; // 核心密集
                     const theta = Math.random() * Math.PI * 2;
                     const phi = Math.acos(2*Math.random()-1);
-                    x = center.x + r * Math.sin(phi) * Math.cos(theta);
-                    y = center.y + r * Math.sin(phi) * Math.sin(theta);
-                    z = center.z + r * Math.cos(phi);
+                    
+                    x = star[0] + r * Math.sin(phi) * Math.cos(theta);
+                    y = star[1] + r * Math.sin(phi) * Math.sin(theta);
+                    z = star[2] + r * Math.cos(phi);
+                } else {
+                    // 星云背景
+                    // 在整个星座的包围盒范围内生成云雾
+                    // 简单的做法：随机选两个星，在连线上或周围生成
+                    const s1 = stars[Math.floor(Math.random() * stars.length)];
+                    const s2 = stars[Math.floor(Math.random() * stars.length)];
+                    
+                    const lerpT = Math.random();
+                    const centerX = s1[0] + (s2[0]-s1[0]) * lerpT;
+                    const centerY = s1[1] + (s2[1]-s1[1]) * lerpT;
+                    const centerZ = s1[2] + (s2[2]-s1[2]) * lerpT;
+                    
+                    // 散布范围大一些
+                    const r = 8 * Math.random(); 
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2*Math.random()-1);
+
+                    x = centerX + r * Math.sin(phi) * Math.cos(theta);
+                    y = centerY + r * Math.sin(phi) * Math.sin(theta);
+                    z = centerZ + r * Math.cos(phi);
                 }
 
                 arr[i3] = x;
@@ -226,7 +267,7 @@
             const randomness = new Float32Array(COUNT * 3);
             const sizes = new Float32Array(COUNT);
 
-            const initialShape = calculateShapePositions(PRESETS[0].type);
+            const initialShape = calculateShapePositions(0);
             targetPositions.set(initialShape);
             
             for (let i = 0; i < COUNT; i++) {
@@ -239,7 +280,9 @@
                 randomness[i3+1] = Math.random();
                 randomness[i3+2] = Math.random();
                 
-                sizes[i] = Math.random();
+                // 偶尔有一些特别大的粒子作为星星闪烁
+                if (Math.random() < 0.05) sizes[i] = Math.random() * 2.0 + 1.0;
+                else sizes[i] = Math.random();
             }
 
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -251,8 +294,8 @@
                     uTime: { value: 0 },
                     uExpansion: { value: 1.0 },
                     uTurbulence: { value: 0.0 },
-                    uColorInner: { value: new THREE.Color(PRESETS[0].cInner) },
-                    uColorOuter: { value: new THREE.Color(PRESETS[0].cOuter) }
+                    uColorInner: { value: new THREE.Color(ZODIAC[0].cInner) },
+                    uColorOuter: { value: new THREE.Color(ZODIAC[0].cOuter) }
                 },
                 vertexShader: `
                     uniform float uTime;
@@ -270,18 +313,19 @@
                     void main() {
                         vec3 pos = position;
 
-                        // 距离着色
-                        float dist = length(pos) / 25.0;
-                        dist = clamp(dist, 0.0, 1.0);
+                        // 简单的距离混合
+                        float dist = length(pos) / 20.0;
+                        vColor = mix(uColorInner, uColorOuter, clamp(dist, 0.0, 1.0));
                         
-                        vColor = mix(uColorInner, uColorOuter, dist);
-                        vColor += (randomness - 0.5) * 0.15; 
+                        // 星星闪烁 (利用 size 属性区分)
+                        float twinkle = 0.0;
+                        if (size > 1.5) {
+                            twinkle = sin(uTime * 5.0 + randomness.x * 100.0) * 0.3;
+                            vColor += vec3(0.5); // 星星更白更亮
+                        }
 
-                        // 旋转
-                        float angle = uTime * 0.1 * (1.0 / (dist + 0.2));
-                        
-                        // 动态呼吸
-                        float breath = sin(uTime * 1.5 + randomness.x * 20.0) * 0.3;
+                        // 呼吸
+                        float breath = sin(uTime * 1.5 + randomness.x * 20.0) * 0.2;
                         
                         vec3 dir = normalize(pos);
                         if(length(pos) < 0.1) dir = vec3(0.0, 1.0, 0.0);
@@ -300,11 +344,11 @@
                         gl_Position = projectionMatrix * mvPosition;
 
                         // 粒子大小
-                        float sizeMult = (1.0 - dist) * 1.5 + 0.6;
-                        gl_PointSize = size * sizeMult * (300.0 / -mvPosition.z);
+                        float sizeMult = (1.0 - dist * 0.5) + twinkle;
+                        gl_PointSize = size * sizeMult * (350.0 / -mvPosition.z);
                         
                         // 透明度
-                        vAlpha = smoothstep(100.0, 40.0, length(mvPosition.xyz)); 
+                        vAlpha = smoothstep(80.0, 30.0, length(mvPosition.xyz)); 
                     }
                 `,
                 fragmentShader: `
@@ -316,9 +360,10 @@
                         if(d > 0.5) discard;
                         
                         float glow = 1.0 - smoothstep(0.0, 0.5, d);
-                        glow = pow(glow, 2.5); 
+                        glow = pow(glow, 2.0); 
                         
-                        vec3 finalColor = vColor * 1.8; 
+                        // 提亮
+                        vec3 finalColor = vColor * 1.5; 
 
                         gl_FragColor = vec4(finalColor, vAlpha * glow);
                     }
@@ -332,6 +377,27 @@
             scene.add(particles);
         }
 
+        function updateUI() {
+            const elName = document.getElementById('c-name-text');
+            const elType = document.getElementById('element-type');
+            const container = document.getElementById('constellation-name');
+            
+            container.style.opacity = 0;
+            
+            setTimeout(() => {
+                const data = ZODIAC[currentPresetIndex];
+                elName.innerText = data.name;
+                elType.innerText = data.element;
+                // 根据元素类型变色
+                if(data.element.includes("火")) elType.style.color = "#ff5500";
+                else if(data.element.includes("水")) elType.style.color = "#0088ff";
+                else if(data.element.includes("风")) elType.style.color = "#ccffff";
+                else elType.style.color = "#44aa44";
+                
+                container.style.opacity = 1;
+            }, 300);
+        }
+
         // --- 切换逻辑 ---
         function switchPreset(direction) {
             const now = Date.now();
@@ -339,15 +405,16 @@
             lastSwitchTime = now;
 
             currentPresetIndex += direction;
-            if (currentPresetIndex >= PRESETS.length) currentPresetIndex = 0;
-            if (currentPresetIndex < 0) currentPresetIndex = PRESETS.length - 1;
+            if (currentPresetIndex >= ZODIAC.length) currentPresetIndex = 0;
+            if (currentPresetIndex < 0) currentPresetIndex = ZODIAC.length - 1;
 
-            const p = PRESETS[currentPresetIndex];
+            const p = ZODIAC[currentPresetIndex];
             
-            targetPositions = calculateShapePositions(p.type);
+            updateUI();
+
+            targetPositions = calculateShapePositions(currentPresetIndex);
             targetState.cInner.setHex(p.cInner);
             targetState.cOuter.setHex(p.cOuter);
-            targetState.turbulence = p.turbulence;
             targetState.expansion = 1.0; 
         }
 
@@ -355,8 +422,8 @@
         function updateState() {
             const lerpSpeed = 0.05; 
             const moveSpeed = 0.08; 
-            const shapeMorphSpeed = 0.03; 
-            const colorLerpSpeed = 0.05;
+            const shapeMorphSpeed = 0.04; 
+            const colorLerpSpeed = 0.04;
 
             state.expansion += (targetState.expansion - state.expansion) * lerpSpeed;
             state.turbulence += (targetState.turbulence - state.turbulence) * lerpSpeed;
@@ -386,6 +453,7 @@
             }
 
             if (particles) {
+                // 自转：根据手势速度叠加
                 particles.rotation.y += state.baseSpeed + state.rotationVel;
                 particles.rotation.x += state.rotationVel * 0.2; 
                 particles.position.x = state.posX;
@@ -444,7 +512,6 @@
                     const gesture = detectGesture(lm);
                     const palmSize = getDist(lm[0], lm[9]);
 
-                    // 位置映射
                     targetState.posX = (0.5 - lm[9].x) * 60; 
                     targetState.posY = (0.5 - lm[9].y) * 40; 
 
@@ -452,7 +519,7 @@
                     else if (gesture === 'SWIPE_LEFT') switchPreset(-1);
                     else if (gesture === 'OPEN') {
                         targetState.expansion = 2.0; 
-                        targetState.turbulence = 1.5; 
+                        targetState.turbulence = 1.0; 
                         targetState.rotationVel = 0;
                     } 
                     else if (gesture === 'FIST') {
@@ -463,14 +530,14 @@
                     } 
                     else if (gesture === 'ROTATE') {
                         targetState.expansion = 1.0;
-                        targetState.turbulence = PRESETS[currentPresetIndex].turbulence + 0.3; 
+                        targetState.turbulence = 0.5; 
                         if (lm[8].x < 0.4) targetState.rotationVel = 0.1; 
                         else if (lm[8].x > 0.6) targetState.rotationVel = -0.1; 
                         else targetState.rotationVel = 0.0;
                     } 
                     else {
                         targetState.expansion = 1.0;
-                        targetState.turbulence = PRESETS[currentPresetIndex].turbulence;
+                        targetState.turbulence = 0.2;
                         targetState.rotationVel = 0;
                     }
                 } else {
