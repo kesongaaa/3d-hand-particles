@@ -3,16 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 灵动核心 - 沉浸版</title>
+    <title>Three.js 多重星体系统</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000205; font-family: sans-serif; }
         
-        /* 【修改点】隐藏视频容器，但保留在DOM中供算法使用 */
-        #video-container {
-            display: none; 
-        }
-
-        #input-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #video-container { display: none; } /* 隐藏视频 */
 
         #loader {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -35,9 +30,21 @@
             text-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
         }
 
+        /* 顶部信息栏 */
+        #hud {
+            position: absolute; top: 20px; width: 100%; text-align: center;
+            pointer-events: none; z-index: 10;
+        }
+        
+        #planet-name {
+            font-size: 24px; font-weight: bold; letter-spacing: 4px;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            transition: all 0.5s ease;
+        }
+        
         #debug-info {
-            position: absolute; top: 10px; right: 10px; text-align: right;
-            color: rgba(255,255,255,0.4); font-size: 12px; pointer-events: none; font-family: monospace;
+            font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 5px;
         }
 
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -55,9 +62,11 @@
         <div class="loading-text">正在初始化视觉核心...</div>
     </div>
     
-    <div id="debug-info">System Ready</div>
+    <div id="hud">
+        <div id="planet-name">ORIGIN CORE</div>
+        <div id="debug-info">Gesture: Wait...</div>
+    </div>
 
-    <!-- 视频元素依然存在，只是看不见了 -->
     <div id="video-container">
         <video id="input-video" playsinline></video>
     </div>
@@ -74,34 +83,79 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // --- 核心配置 ---
-        const CONFIG = {
-            count: 35000,         
-            radius: 12,           
-            colorInner: new THREE.Color(0x0066ff), 
-            colorOuter: new THREE.Color(0x00ffff), 
-        };
+        // --- 预设配置 (星球数据) ---
+        const PRESETS = [
+            {
+                name: "ORIGIN CORE", // 0. 初始球体
+                type: "SPHERE",
+                c1: 0x0066ff, // 蓝
+                c2: 0x00ffff, // 青
+                turbulence: 0.2
+            },
+            {
+                name: "RED GIANT", // 1. 红巨星
+                type: "SPHERE", // 也是球体，但更躁动
+                c1: 0xff0000, // 红
+                c2: 0xffaa00, // 金
+                turbulence: 0.6 // 扰动大
+            },
+            {
+                name: "NEBULA RING", // 2. 土星环
+                type: "SATURN",
+                c1: 0x8800ff, // 紫
+                c2: 0xff0088, // 粉
+                turbulence: 0.15
+            },
+            {
+                name: "CYBER CUBE", // 3. 立方体
+                type: "CUBE",
+                c1: 0x00ff00, // 绿
+                c2: 0xffffff, // 白
+                turbulence: 0.1
+            },
+            {
+                name: "SPIRAL GALAXY", // 4. 银河
+                type: "GALAXY",
+                c1: 0x000055, // 深蓝
+                c2: 0xff00ff, // 洋红
+                turbulence: 0.3
+            }
+        ];
 
+        let currentPresetIndex = 0;
+        let lastSwitchTime = 0; // 防止误触，冷却时间
+
+        // --- 核心变量 ---
+        const COUNT = 35000;
         let scene, camera, renderer, particles, material;
+        let targetPositions = new Float32Array(COUNT * 3); // 目标形状的坐标数组
         let time = 0;
         
+        // 状态
         let state = {
             expansion: 1.0,       
             turbulence: 0.2,      
             rotationVel: 0.0,     
             baseSpeed: 0.002,
-            posX: 0,
-            posY: 0
+            posX: 0, posY: 0,
+            // 颜色状态 (用于平滑过渡)
+            c1: new THREE.Color(PRESETS[0].c1),
+            c2: new THREE.Color(PRESETS[0].c2)
         };
         
         let targetState = { 
             expansion: 1.0, 
             turbulence: 0.2, 
             rotationVel: 0.0,
-            posX: 0,
-            posY: 0
+            posX: 0, posY: 0,
+            c1: new THREE.Color(PRESETS[0].c1),
+            c2: new THREE.Color(PRESETS[0].c2)
         };
 
+        // 手势检测辅助变量
+        let lastHandX = 0.5; // 用于计算速度
+        
+        // --- 初始化 ---
         function initScene() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x000205); 
@@ -124,69 +178,142 @@
             });
         }
 
+        // --- 粒子形状生成算法 ---
+        function calculateShapePositions(type) {
+            const arr = new Float32Array(COUNT * 3);
+            for(let i=0; i<COUNT; i++) {
+                const i3 = i*3;
+                let x,y,z;
+
+                if (type === "SPHERE") {
+                    // 标准球体
+                    const u = Math.random();
+                    const v = Math.random();
+                    const r = 12 * (0.8 + Math.random() * 0.4);
+                    const theta = 2 * Math.PI * u;
+                    const phi = Math.acos(2 * v - 1);
+                    x = r * Math.sin(phi) * Math.cos(theta);
+                    y = r * Math.sin(phi) * Math.sin(theta);
+                    z = r * Math.cos(phi);
+                }
+                else if (type === "SATURN") {
+                    // 行星 + 环
+                    if (Math.random() < 0.4) {
+                        // 核心球
+                        const r = 7 * Math.cbrt(Math.random()); 
+                        const theta = Math.random() * Math.PI * 2;
+                        const phi = Math.acos(2*Math.random()-1);
+                        x = r * Math.sin(phi) * Math.cos(theta);
+                        y = r * Math.sin(phi) * Math.sin(theta);
+                        z = r * Math.cos(phi);
+                    } else {
+                        // 环
+                        const angle = Math.random() * Math.PI * 2;
+                        const r = 14 + Math.random() * 8;
+                        x = Math.cos(angle) * r;
+                        z = Math.sin(angle) * r;
+                        y = (Math.random()-0.5) * 0.5; // 扁平
+                        // 倾斜环
+                        const tilt = 0.4;
+                        const yt = y * Math.cos(tilt) - z * Math.sin(tilt);
+                        const zt = y * Math.sin(tilt) + z * Math.cos(tilt);
+                        y = yt; z = zt;
+                    }
+                }
+                else if (type === "CUBE") {
+                    // 立方体
+                    const size = 16;
+                    x = (Math.random() - 0.5) * size;
+                    y = (Math.random() - 0.5) * size;
+                    z = (Math.random() - 0.5) * size;
+                }
+                else if (type === "GALAXY") {
+                    // 螺旋星系
+                    const angle = Math.random() * Math.PI * 2;
+                    // 螺旋半径
+                    const r = Math.pow(Math.random(), 0.5) * 20; 
+                    const spiralAngle = angle + r * 0.5;
+                    x = Math.cos(spiralAngle) * r;
+                    z = Math.sin(spiralAngle) * r;
+                    // 中心厚，边缘薄
+                    const h = (1 - (r/20)) * 4; 
+                    y = (Math.random()-0.5) * h;
+                }
+
+                arr[i3] = x;
+                arr[i3+1] = y;
+                arr[i3+2] = z;
+            }
+            return arr;
+        }
+
         function createParticles() {
             const geometry = new THREE.BufferGeometry();
-            const positions = [];
-            const randomness = [];
-            const colors = [];
-            const sizes = [];
+            const positions = new Float32Array(COUNT * 3);
+            const randomness = new Float32Array(COUNT * 3);
+            const mixRatios = new Float32Array(COUNT); // 颜色混合因子
+            const sizes = new Float32Array(COUNT);
 
-            for (let i = 0; i < CONFIG.count; i++) {
-                const u = Math.random();
-                const v = Math.random();
-                const theta = 2 * Math.PI * u;
-                const phi = Math.acos(2 * v - 1);
+            // 初始形状
+            const initialShape = calculateShapePositions(PRESETS[0].type);
+            targetPositions.set(initialShape); // 初始化目标
+            
+            for (let i = 0; i < COUNT; i++) {
+                positions[i*3] = initialShape[i*3];
+                positions[i*3+1] = initialShape[i*3+1];
+                positions[i*3+2] = initialShape[i*3+2];
+
+                randomness[i*3] = Math.random();
+                randomness[i*3+1] = Math.random();
+                randomness[i*3+2] = Math.random();
                 
-                const r = CONFIG.radius * (0.8 + Math.random() * 0.4); 
-                const x = r * Math.sin(phi) * Math.cos(theta);
-                const y = r * Math.sin(phi) * Math.sin(theta);
-                const z = r * Math.cos(phi);
-
-                positions.push(x, y, z);
-                randomness.push(Math.random(), Math.random(), Math.random());
-
-                const mixRatio = Math.random();
-                const c = new THREE.Color().lerpColors(CONFIG.colorInner, CONFIG.colorOuter, mixRatio);
-                colors.push(c.r, c.g, c.b);
-
-                sizes.push(Math.random() * 1.5 + 0.5);
+                mixRatios[i] = Math.random(); // 每个粒子固定的颜色倾向
+                sizes[i] = Math.random() * 1.5 + 0.5;
             }
 
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            geometry.setAttribute('randomness', new THREE.Float32BufferAttribute(randomness, 3));
-            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('randomness', new THREE.BufferAttribute(randomness, 3));
+            geometry.setAttribute('mixRatio', new THREE.BufferAttribute(mixRatios, 1));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
             material = new THREE.ShaderMaterial({
                 uniforms: {
                     uTime: { value: 0 },
                     uExpansion: { value: 1.0 },
-                    uTurbulence: { value: 0.0 }
+                    uTurbulence: { value: 0.0 },
+                    // 使用 Uniform 传入颜色，以便动态切换
+                    uColor1: { value: new THREE.Color(PRESETS[0].c1) },
+                    uColor2: { value: new THREE.Color(PRESETS[0].c2) }
                 },
                 vertexShader: `
                     uniform float uTime;
                     uniform float uExpansion;
                     uniform float uTurbulence;
+                    uniform vec3 uColor1;
+                    uniform vec3 uColor2;
                     
                     attribute vec3 randomness;
-                    attribute vec3 color;
+                    attribute float mixRatio;
                     attribute float size;
                     
                     varying vec3 vColor;
                     varying float vAlpha;
 
                     void main() {
-                        vColor = color;
+                        // 在 Shader 中混合颜色，这样只需要改 Uniform 就能全屏变色
+                        vColor = mix(uColor1, uColor2, mixRatio);
+
                         vec3 pos = position;
 
-                        // 呼吸
+                        // 呼吸动画
                         float breath = sin(uTime * 1.5 + randomness.x * 10.0) * 0.5;
                         
-                        // 扩散
+                        // 扰动
                         vec3 dir = normalize(pos);
+                        if(length(pos) < 0.1) dir = vec3(0.0, 1.0, 0.0); // 避免中心点错误
                         pos += dir * breath * uTurbulence; 
                         
-                        // 爆炸/收缩偏移
+                        // 爆炸偏移
                         float expFactor = max(0.0, uExpansion - 1.0);
                         pos += dir * expFactor * 10.0 * randomness.y; 
                         
@@ -196,7 +323,6 @@
                         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
                         gl_Position = projectionMatrix * mvPosition;
 
-                        // 粒子大小 (深度感)
                         gl_PointSize = size * (200.0 / -mvPosition.z);
                         vAlpha = smoothstep(60.0, 40.0, length(mvPosition.xyz)); 
                     }
@@ -222,53 +348,81 @@
             scene.add(particles);
         }
 
-        const getDist = (a, b) => Math.sqrt(Math.pow(a.x-b.x, 2) + Math.pow(a.y-b.y, 2));
+        // --- 切换逻辑 ---
+        function switchPreset(direction) {
+            const now = Date.now();
+            if (now - lastSwitchTime < 800) return; // 0.8秒冷却，防止连跳
+            lastSwitchTime = now;
 
-        function isFingerBent(lm, tipIdx, mcpIdx) {
-            const tipToWrist = getDist(lm[tipIdx], lm[0]);
-            const mcpToWrist = getDist(lm[mcpIdx], lm[0]);
-            return tipToWrist < mcpToWrist * 1.3; 
+            // 计算索引
+            currentPresetIndex += direction;
+            if (currentPresetIndex >= PRESETS.length) currentPresetIndex = 0;
+            if (currentPresetIndex < 0) currentPresetIndex = PRESETS.length - 1;
+
+            const p = PRESETS[currentPresetIndex];
+            
+            // 1. 设置UI
+            const nameEl = document.getElementById('planet-name');
+            nameEl.innerText = p.name;
+            nameEl.style.transform = `scale(1.2)`; // 弹跳动画
+            setTimeout(() => nameEl.style.transform = `scale(1.0)`, 200);
+
+            // 2. 计算新形状的目标位置
+            targetPositions = calculateShapePositions(p.type);
+
+            // 3. 设置目标颜色和扰动
+            targetState.c1.setHex(p.c1);
+            targetState.c2.setHex(p.c2);
+            targetState.turbulence = p.turbulence;
+            
+            // 默认重置扩散
+            targetState.expansion = 1.0; 
         }
 
-        function detectGesture(lm) {
-            const palmSize = getDist(lm[0], lm[9]);
-
-            const indexBent = isFingerBent(lm, 8, 5);
-            const middleBent = isFingerBent(lm, 12, 9);
-            const ringBent = isFingerBent(lm, 16, 13);
-            const pinkyBent = isFingerBent(lm, 20, 17);
-            const bentCount = (indexBent?1:0) + (middleBent?1:0) + (ringBent?1:0) + (pinkyBent?1:0);
-
-            let gesture = 'IDLE';
-
-            if (bentCount === 4) gesture = 'FIST';
-            else if (bentCount === 0) gesture = 'OPEN';
-            else if (!indexBent && middleBent && ringBent && pinkyBent) gesture = 'ROTATE';
-
-            return { type: gesture, palmSize: palmSize, indexTipX: lm[8].x };
-        }
-
+        // --- 动画循环 ---
         function updateState() {
+            // 参数 Lerp
             const lerpSpeed = 0.08; 
             const moveSpeed = 0.08; 
+            const shapeMorphSpeed = 0.05; // 形状变形速度
+            const colorLerpSpeed = 0.05;
 
             state.expansion += (targetState.expansion - state.expansion) * lerpSpeed;
+            // 如果不在手势控制下，turbulance 回归预设值，否则保持手势值
+            // 这里为了简单，我们让 turbulence 平滑过渡
+            // 注意：下面手势识别会覆盖 targetState.turbulence
             state.turbulence += (targetState.turbulence - state.turbulence) * lerpSpeed;
             state.rotationVel += (targetState.rotationVel - state.rotationVel) * lerpSpeed;
-            
             state.posX += (targetState.posX - state.posX) * moveSpeed;
             state.posY += (targetState.posY - state.posY) * moveSpeed;
 
+            // 颜色平滑过渡
+            state.c1.lerp(targetState.c1, colorLerpSpeed);
+            state.c2.lerp(targetState.c2, colorLerpSpeed);
+
+            // 粒子位置 Morphing (关键步骤)
+            const positions = particles.geometry.attributes.position.array;
+            for(let i=0; i<COUNT; i++) {
+                const i3 = i*3;
+                // 让当前点 飞向 目标点
+                positions[i3] += (targetPositions[i3] - positions[i3]) * shapeMorphSpeed;
+                positions[i3+1] += (targetPositions[i3+1] - positions[i3+1]) * shapeMorphSpeed;
+                positions[i3+2] += (targetPositions[i3+2] - positions[i3+2]) * shapeMorphSpeed;
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+
+            // 更新 Uniforms
             if (material) {
                 material.uniforms.uTime.value = time;
                 material.uniforms.uExpansion.value = state.expansion;
                 material.uniforms.uTurbulence.value = state.turbulence;
+                material.uniforms.uColor1.value.copy(state.c1);
+                material.uniforms.uColor2.value.copy(state.c2);
             }
 
             if (particles) {
                 particles.rotation.y += state.baseSpeed + state.rotationVel;
                 particles.rotation.x += state.rotationVel * 0.2; 
-                
                 particles.position.x = state.posX;
                 particles.position.y = state.posY;
             }
@@ -281,6 +435,45 @@
             renderer.render(scene, camera);
         }
 
+        // --- 手势识别 ---
+        const getDist = (a, b) => Math.sqrt(Math.pow(a.x-b.x, 2) + Math.pow(a.y-b.y, 2));
+        function isFingerBent(lm, tipIdx, mcpIdx) {
+            return getDist(lm[tipIdx], lm[0]) < getDist(lm[mcpIdx], lm[0]) * 1.3;
+        }
+
+        function detectGesture(lm) {
+            // 手指状态
+            const bentCount = [8,12,16,20].reduce((acc, tip, idx) => {
+                return acc + (isFingerBent(lm, tip, [5,9,13,17][idx]) ? 1 : 0);
+            }, 0);
+            const indexBent = isFingerBent(lm, 8, 5);
+            const middleBent = isFingerBent(lm, 12, 9);
+            const ringBent = isFingerBent(lm, 16, 13);
+            const pinkyBent = isFingerBent(lm, 20, 17);
+
+            // 1. 挥手检测 (SWIPE)
+            // 计算手掌中心的水平移动速度
+            // currX (镜像后的坐标)
+            const currX = 1.0 - lm[9].x; 
+            const velocity = currX - lastHandX;
+            lastHandX = currX;
+
+            const swipeThreshold = 0.08; // 挥手灵敏度
+
+            // 只有张手状态下才能挥动切换，防止握拳时误触
+            if (bentCount < 3) {
+                if (velocity > swipeThreshold) return 'SWIPE_RIGHT';
+                if (velocity < -swipeThreshold) return 'SWIPE_LEFT';
+            }
+
+            // 2. 常规手势
+            if (bentCount === 4) return 'FIST';
+            if (bentCount === 0) return 'OPEN';
+            if (!indexBent && middleBent && ringBent && pinkyBent) return 'ROTATE';
+
+            return 'IDLE';
+        }
+
         function initMediaPipe() {
             if (!window.Hands) { setTimeout(initMediaPipe, 100); return; }
 
@@ -290,41 +483,51 @@
             hands.onResults(results => {
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     const lm = results.multiHandLandmarks[0];
-                    const data = detectGesture(lm);
-                    const gesture = data.type;
-                    const size = data.palmSize;
+                    const gesture = detectGesture(lm);
+                    const palmSize = getDist(lm[0], lm[9]);
 
-                    // 位置映射
-                    const handCenterX = lm[9].x; 
-                    const handCenterY = lm[9].y;
-                    targetState.posX = (0.5 - handCenterX) * 60; 
-                    targetState.posY = (0.5 - handCenterY) * 40; 
+                    // 位置映射 (镜像处理)
+                    targetState.posX = (0.5 - lm[9].x) * 60; 
+                    targetState.posY = (0.5 - lm[9].y) * 40; 
 
-                    document.getElementById('debug-info').innerHTML = 
-                        `Gesture: ${gesture}<br>Pos: ${targetState.posX.toFixed(1)}, ${targetState.posY.toFixed(1)}`;
+                    const debugEl = document.getElementById('debug-info');
+                    debugEl.innerText = `Gesture: ${gesture}`;
 
-                    if (gesture === 'OPEN') {
+                    // --- 手势响应 ---
+                    
+                    if (gesture === 'SWIPE_RIGHT') {
+                        switchPreset(1); // 下一个
+                        debugEl.innerText = ">> SWIPE NEXT >>";
+                    }
+                    else if (gesture === 'SWIPE_LEFT') {
+                        switchPreset(-1); // 上一个
+                        debugEl.innerText = "<< SWIPE PREV <<";
+                    }
+                    else if (gesture === 'OPEN') {
                         targetState.expansion = 2.4; 
                         targetState.turbulence = 1.5; 
                         targetState.rotationVel = 0;
                     } 
                     else if (gesture === 'FIST') {
-                        let distFactor = Math.max(0.1, 1.0 - (size - 0.15) * 4.0); 
+                        let distFactor = Math.max(0.1, 1.0 - (palmSize - 0.15) * 4.0); 
                         distFactor = Math.min(1.0, distFactor);
                         targetState.expansion = 0.5 * distFactor; 
-                        targetState.turbulence = 0.0;
                         targetState.rotationVel = 0;
+                        // 握拳时，扰动应该归零，体现稳固
+                        targetState.turbulence = 0.0; 
                     } 
                     else if (gesture === 'ROTATE') {
                         targetState.expansion = 1.0;
-                        targetState.turbulence = 0.5;
-                        if (data.indexTipX < 0.4) targetState.rotationVel = 0.08; 
-                        else if (data.indexTipX > 0.6) targetState.rotationVel = -0.08; 
+                        // 旋转时稍微增加一点扰动
+                        targetState.turbulence = PRESETS[currentPresetIndex].turbulence + 0.2; 
+                        if (lm[8].x < 0.4) targetState.rotationVel = 0.08; 
+                        else if (lm[8].x > 0.6) targetState.rotationVel = -0.08; 
                         else targetState.rotationVel = 0.0;
                     } 
                     else {
+                        // IDLE: 恢复到当前预设的默认值
                         targetState.expansion = 1.0;
-                        targetState.turbulence = 0.2;
+                        targetState.turbulence = PRESETS[currentPresetIndex].turbulence;
                         targetState.rotationVel = 0;
                     }
                 } else {
