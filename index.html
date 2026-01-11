@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 灵动核心</title>
+    <title>Three.js 灵动核心 - 广域扩散版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000205; font-family: sans-serif; }
         
@@ -85,18 +85,15 @@
         let scene, camera, renderer, particles, material;
         let time = 0;
         
-        // 交互状态
         let state = {
             expansion: 1.0,       
             turbulence: 0.2,      
             rotationVel: 0.0,     
             baseSpeed: 0.002,
-            // 新增：位置状态
             posX: 0,
             posY: 0
         };
         
-        // 目标状态
         let targetState = { 
             expansion: 1.0, 
             turbulence: 0.2, 
@@ -225,8 +222,6 @@
             scene.add(particles);
         }
 
-        // --- 手势与位置算法 ---
-
         const getDist = (a, b) => Math.sqrt(Math.pow(a.x-b.x, 2) + Math.pow(a.y-b.y, 2));
 
         function isFingerBent(lm, tipIdx, mcpIdx) {
@@ -254,31 +249,26 @@
         }
 
         function updateState() {
-            const lerpSpeed = 0.08; // 状态插值速度
-            const moveSpeed = 0.08; // 位置跟随速度
+            const lerpSpeed = 0.08; 
+            const moveSpeed = 0.08; 
 
-            // 1. 状态平滑
             state.expansion += (targetState.expansion - state.expansion) * lerpSpeed;
             state.turbulence += (targetState.turbulence - state.turbulence) * lerpSpeed;
             state.rotationVel += (targetState.rotationVel - state.rotationVel) * lerpSpeed;
             
-            // 2. 位置平滑跟随 (核心新增逻辑)
             state.posX += (targetState.posX - state.posX) * moveSpeed;
             state.posY += (targetState.posY - state.posY) * moveSpeed;
 
-            // 更新 Shader 参数
             if (material) {
                 material.uniforms.uTime.value = time;
                 material.uniforms.uExpansion.value = state.expansion;
                 material.uniforms.uTurbulence.value = state.turbulence;
             }
 
-            // 更新物体位置与旋转
             if (particles) {
                 particles.rotation.y += state.baseSpeed + state.rotationVel;
                 particles.rotation.x += state.rotationVel * 0.2; 
                 
-                // 应用位置移动
                 particles.position.x = state.posX;
                 particles.position.y = state.posY;
             }
@@ -301,33 +291,22 @@
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     const lm = results.multiHandLandmarks[0];
                     const data = detectGesture(lm);
-                    
                     const gesture = data.type;
                     const size = data.palmSize;
 
-                    // --- 计算位置映射 ---
-                    // MediaPipe 坐标: x:0(左)-1(右), y:0(上)-1(下)
-                    // 视频被镜像翻转了 (transform: scaleX(-1))
-                    // 所以: 
-                    // 手向右移 -> landmarks[9].x 变小 (因为镜像) -> 需要映射到 ThreeJS 的正X
-                    // 手向上移 -> landmarks[9].y 变小 -> 需要映射到 ThreeJS 的正Y
-                    
-                    const handCenterX = lm[9].x; // 使用中指指根作为手掌中心
+                    // 位置映射
+                    const handCenterX = lm[9].x; 
                     const handCenterY = lm[9].y;
-
-                    // 映射范围：大约 -35 到 +35
-                    // (0.5 - x) * 倍率: 0.5是中心点
                     targetState.posX = (0.5 - handCenterX) * 60; 
                     targetState.posY = (0.5 - handCenterY) * 40; 
 
-                    // 调试文字
                     document.getElementById('debug-info').innerHTML = 
                         `Gesture: ${gesture}<br>Pos: ${targetState.posX.toFixed(1)}, ${targetState.posY.toFixed(1)}`;
 
-                    // --- 手势逻辑 ---
                     if (gesture === 'OPEN') {
-                        targetState.expansion = 1.6;
-                        targetState.turbulence = 1.2; 
+                        // 【修改点】：增加扩散幅度到 2.4 (原1.6)，增加扰动到 1.5
+                        targetState.expansion = 2.4; 
+                        targetState.turbulence = 1.5; 
                         targetState.rotationVel = 0;
                     } 
                     else if (gesture === 'FIST') {
@@ -350,7 +329,6 @@
                         targetState.rotationVel = 0;
                     }
                 } else {
-                    // 没有手时，归位到中心
                     targetState.expansion = 1.0;
                     targetState.rotationVel = 0;
                     targetState.posX = 0;
