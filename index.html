@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 赛博粒子核心</title>
+    <title>Three.js 手势粒子宇宙</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000510; font-family: 'Segoe UI', sans-serif; }
         
-        /* 视频预览窗口 - 加上发光边框 */
+        /* 视频预览窗口 */
         #video-container {
             position: absolute;
             bottom: 20px;
@@ -35,25 +35,32 @@
             z-index: 5;
         }
         .gesture-name {
-            font-size: 80px;
-            font-weight: 800;
-            color: rgba(255, 255, 255, 0.1);
-            text-transform: uppercase;
-            letter-spacing: 10px;
+            font-size: 60px; /* 稍微缩小一点，避免太突兀 */
+            font-weight: 600; /* 细一些 */
+            color: rgba(255, 255, 255, 0.2); /* 默认颜色变淡 */
             transition: all 0.3s ease;
         }
-        /* 激活时的文字发光 */
         .active-text {
-            color: rgba(0, 255, 255, 0.8);
-            text-shadow: 0 0 30px #00ffff;
-            transform: scale(1.2);
+            color: #00d2ff; /* 激活颜色 */
+            text-shadow: 0 0 20px rgba(0, 200, 255, 0.8);
+            font-size: 70px; /* 激活时变大 */
+            font-weight: 800; /* 激活时加粗 */
         }
 
         #loader {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000510; display: flex; align-items: center; justify-content: center;
+            background: #000510; display: flex; flex-direction: column; align-items: center; justify-content: center;
             color: #00ffff; z-index: 100;
         }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 4px solid #003366;
+            border-top: 4px solid #00d2ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 
     <!-- MediaPipe 依赖 -->
@@ -64,10 +71,13 @@
 </head>
 <body>
 
-    <div id="loader"><h1>系统启动中...</h1></div>
+    <div id="loader">
+        <div class="spinner"></div>
+        <div>正在初始化视觉核心...</div>
+    </div>
     
     <div id="status-display">
-        <div id="gesture-name" class="gesture-name">SYSTEM READY</div>
+        <div id="gesture-name" class="gesture-name">系统准备就绪</div>
     </div>
 
     <div id="video-container">
@@ -91,31 +101,40 @@
 
         // --- 核心配置 ---
         const CONFIG = {
-            count: 15000,         // 粒子总数 (减少数量以换取单个粒子的高质量渲染)
-            coreSize: 8,          // 核心球体半径
-            scatterSize: 60,      // 散布范围
-            baseColor: new THREE.Color('#0055ff'), // 深蓝
-            glowColor: new THREE.Color('#00ffff'), // 青色高光
+            count: 30000,         // 粒子总数增加，更细腻
+            coreSize: 7,          // 核心球体半径
+            scatterSize: 70,      // 散布范围
+            baseColor: new THREE.Color('#0044aa'), // 更深的蓝
+            glowColor: new THREE.Color('#00aaff'), // 亮青色
+            minParticleSize: 0.3, // 最小粒子大小
+            maxParticleSize: 8,   // 最大光斑粒子大小
+            smallParticleRatio: 0.8, // 小粒子比例
+            largeParticleRatio: 0.1, // 大光斑粒子比例
+            bokehParticleRatio: 0.1, // 迷离光斑粒子比例
         };
 
-        let scene, camera, renderer, material;
-        let particles, geometry;
+        let scene, camera, renderer, material, controls;
+        let positions, randoms, sizes, colors, originalPositions; // 存储粒子数据
         let time = 0;
 
         // 状态变量
         let state = {
             scale: 1.0,           // 整体膨胀系数
-            dispersal: 0.0,       // 炸散程度 (0 = 聚集, 1 = 炸飞)
-            coreTightness: 1.0,   // 核心紧密度
-            rotationSpeed: 0.2,   // 旋转速度
-            gestureName: ''
+            dispersal: 0.0,       // 炸散程度
+            coreTightness: 1.0,   // 核心紧密度 (用于握拳)
+            rotationSpeed: 0.2,   // 默认旋转速度
+            particleAlpha: 1.0,   // 粒子整体透明度
+            gestureName: '系统准备就绪',
+            // 新增：用于拖动的手势
+            isDragging: false,
+            dragOffset: new THREE.Vector3(),
+            lastGesture: null, // 记录上一个手势，用于判断滑动
         };
         let targetState = { ...state };
 
         // --- 1. 场景初始化 ---
         function init() {
             scene = new THREE.Scene();
-            // 背景不是纯黑，而是带有极淡的蓝色雾气，增加空间感
             scene.fog = new THREE.FogExp2(0x000510, 0.015);
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -124,12 +143,10 @@
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            
-            // 开启这种混合模式有助于产生强烈的光感
             renderer.setClearColor(0x000510);
             document.body.appendChild(renderer.domElement);
 
-            const controls = new OrbitControls(camera, renderer.domElement);
+            controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.autoRotate = true;
             controls.autoRotateSpeed = 0.5;
@@ -143,87 +160,104 @@
             });
         }
 
-        // --- 2. 创建超亮粒子系统 ---
+        // --- 2. 创建更细腻的粒子系统 ---
         function createParticles() {
             geometry = new THREE.BufferGeometry();
             
-            const positions = [];
-            const randoms = []; // 用于动画的随机偏移
-            const sizes = [];   // 粒子基础大小
-            const colors = [];  // 粒子颜色
+            const posArr = [];
+            const randArr = [];
+            const sizeArr = [];
+            const colorArr = [];
+            originalPositions = []; // 存储粒子的基础位置，用于复原
 
-            const color1 = CONFIG.baseColor;
-            const color2 = CONFIG.glowColor;
+            const color1 = CONFIG.baseColor.clone();
+            const color2 = CONFIG.glowColor.clone();
 
-            for (let i = 0; i < CONFIG.count; i++) {
-                // 两种分布模式：
-                // 30% 是核心致密球体 (高亮，小而密)
-                // 70% 是周围漂浮的尘埃 (大光斑，范围广)
-                const isCore = Math.random() < 0.35; 
-
-                let x, y, z, r;
+            let currentParticleCount = 0;
+            
+            // 核心粒子 (密集，小，高亮)
+            const coreCount = Math.floor(CONFIG.count * 0.4); // 核心粒子比例增加
+            for (let i = 0; i < coreCount; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const r = CONFIG.coreSize * Math.pow(Math.random(), 0.4); // 核心更实心
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.sin(phi) * Math.sin(theta);
+                const z = r * Math.cos(phi);
                 
-                if (isCore) {
-                    // 核心：高斯分布，聚集在中心
-                    const theta = Math.random() * Math.PI * 2;
-                    const phi = Math.acos(2 * Math.random() - 1);
-                    r = CONFIG.coreSize * Math.pow(Math.random(), 0.5); // 稍微实心一点
-                    x = r * Math.sin(phi) * Math.cos(theta);
-                    y = r * Math.sin(phi) * Math.sin(theta);
-                    z = r * Math.cos(phi);
-                    
-                    sizes.push(Math.random() * 1.5 + 0.5); // 核心粒子较小但密集
-                    
-                    // 核心颜色偏青白
-                    colors.push(color2.r, color2.g, color2.b); 
-                } else {
-                    // 外部：均匀散布在更大的空间
-                    const theta = Math.random() * Math.PI * 2;
-                    const phi = Math.acos(2 * Math.random() - 1);
-                    r = CONFIG.coreSize + Math.random() * (CONFIG.scatterSize - CONFIG.coreSize);
-                    x = r * Math.sin(phi) * Math.cos(theta);
-                    y = r * Math.sin(phi) * Math.sin(theta);
-                    z = r * Math.cos(phi);
-
-                    // 外部粒子：有大有小，模拟景深光斑
-                    // 极少数粒子特别大（Bokeh效果）
-                    if (Math.random() < 0.1) {
-                        sizes.push(Math.random() * 10 + 5); 
-                    } else {
-                        sizes.push(Math.random() * 3 + 1);
-                    }
-
-                    // 外部颜色偏深蓝，带一点青色混合
-                    const mixRatio = Math.random();
-                    colors.push(
-                        color1.r * mixRatio + color2.r * (1-mixRatio),
-                        color1.g * mixRatio + color2.g * (1-mixRatio),
-                        color1.b * mixRatio + color2.b * (1-mixRatio)
-                    );
-                }
-
-                positions.push(x, y, z);
-                randoms.push(Math.random(), Math.random(), Math.random());
+                posArr.push(x, y, z);
+                randArr.push(Math.random(), Math.random(), Math.random());
+                sizeArr.push(Math.random() * 1.2 + CONFIG.minParticleSize); // 核心粒子偏小
+                colorArr.push(color2.r, color2.g, color2.b);
+                originalPositions.push(x, y, z);
+                currentParticleCount++;
             }
 
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            geometry.setAttribute('aRandom', new THREE.Float32BufferAttribute(randoms, 3));
-            geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
-            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            // 大光斑粒子 (Bokeh)
+            const bokehCount = Math.floor(CONFIG.count * CONFIG.bokehParticleRatio);
+            for (let i = 0; i < bokehCount; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const r = CONFIG.coreSize + Math.random() * (CONFIG.scatterSize - CONFIG.coreSize);
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.sin(phi) * Math.sin(theta);
+                const z = r * Math.cos(phi);
 
-            // --- 关键：自定义 Shader 材质 ---
-            // 这比普通 PointsMaterial 能做更多特效
+                posArr.push(x, y, z);
+                randArr.push(Math.random(), Math.random(), Math.random());
+                sizeArr.push(Math.random() * 8 + 5); // 特大光斑
+                
+                // Bokeh 颜色偏柔和的蓝
+                const mixRatio = 0.3 + Math.random() * 0.4;
+                colorArr.push(color1.r * mixRatio + color2.r * (1-mixRatio), color1.g * mixRatio + color2.g * (1-mixRatio), color1.b * mixRatio + color2.b * (1-mixRatio));
+                originalPositions.push(x, y, z);
+                currentParticleCount++;
+            }
+
+            // 小粒子/星尘
+            const dustCount = CONFIG.count - currentParticleCount;
+            for (let i = 0; i < dustCount; i++) {
+                 const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const r = CONFIG.coreSize + Math.random() * (CONFIG.scatterSize - CONFIG.coreSize);
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.sin(phi) * Math.sin(theta);
+                const z = r * Math.cos(phi);
+
+                posArr.push(x, y, z);
+                randArr.push(Math.random(), Math.random(), Math.random());
+                sizeArr.push(Math.random() * 2 + CONFIG.minParticleSize); // 小粒子偏小
+
+                // 星尘颜色：深蓝为主，带一点微光
+                const mixRatio = 0.1 + Math.random() * 0.2;
+                colorArr.push(color1.r * mixRatio + color2.r * (1-mixRatio), color1.g * mixRatio + color2.g * (1-mixRatio), color1.b * mixRatio + color2.b * (1-mixRatio));
+                originalPositions.push(x, y, z);
+            }
+            
+            positions = new Float32Array(posArr);
+            randoms = new Float32Array(randArr);
+            sizes = new Float32Array(sizeArr);
+            colors = new Float32Array(colorArr);
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            // Shader 材质
             material = new THREE.ShaderMaterial({
                 uniforms: {
                     uTime: { value: 0 },
-                    uScale: { value: 1.0 },       // 手势控制：整体缩放
-                    uDispersal: { value: 0.0 },   // 手势控制：炸开程度
+                    uScale: { value: 1.0 },
+                    uDispersal: { value: 0.0 },
+                    uParticleAlpha: { value: 1.0 },
                     uTexture: { value: getTexture() }
                 },
                 vertexShader: `
                     uniform float uTime;
                     uniform float uScale;
                     uniform float uDispersal;
+                    uniform float uParticleAlpha;
                     attribute float size;
                     attribute vec3 aRandom;
                     attribute vec3 color;
@@ -235,13 +269,13 @@
                         
                         vec3 pos = position;
 
-                        // 1. 基础呼吸动画
-                        pos += sin(uTime * 2.0 + aRandom * 10.0) * 0.2;
+                        // 1. 基础呼吸动画 (更柔和)
+                        float breathing = sin(uTime * 1.5 + aRandom.x * 5.0) * 0.1;
+                        pos += breathing;
 
                         // 2. 爆炸效果 (Dispersal)
-                        // 沿着法线方向炸开
-                        vec3 dir = normalize(pos);
-                        pos += dir * uDispersal * 60.0 * aRandom.x; // 随机炸得更远
+                        vec3 dir = normalize(pos); // 粒子自带的初始方向
+                        pos += dir * uDispersal * 80.0 * aRandom.y; // 炸得更狂野
 
                         // 3. 整体缩放 (Scale)
                         pos *= uScale;
@@ -249,16 +283,14 @@
                         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
                         gl_Position = projectionMatrix * mvPosition;
 
-                        // 4. 大小衰减 (Size Attenuation)
-                        // 距离相机越近越大，模拟景深
-                        gl_PointSize = size * (300.0 / -mvPosition.z);
-                        
-                        // 限制最大光斑
-                        gl_PointSize = clamp(gl_PointSize, 0.0, 150.0);
+                        // 4. 大小衰减 (景深)
+                        gl_PointSize = size * (250.0 / -mvPosition.z); // 调整系数，使大小更自然
+                        gl_PointSize = clamp(gl_PointSize, 0.0, 180.0); // 限制最大光斑
 
-                        // 5. 根据距离调整透明度
-                        float dist = length(mvPosition.xyz);
-                        vAlpha = smoothstep(100.0, 0.0, dist); // 远处渐隐
+                        // 5. 透明度 (景深+整体透明度)
+                        float distFactor = smoothstep(80.0, 5.0, -mvPosition.z); // 越近越不透明
+                        float alphaFactor = smoothstep(100.0, 5.0, length(mvPosition.xyz)); // 越远越透明
+                        vAlpha = distFactor * alphaFactor * uParticleAlpha;
                     }
                 `,
                 fragmentShader: `
@@ -267,19 +299,16 @@
                     varying float vAlpha;
 
                     void main() {
-                        // 获取纹理颜色
                         vec4 texColor = texture2D(uTexture, gl_PointCoord);
-                        
-                        // 如果纹理太黑（透明部分），直接丢弃，优化性能
-                        if (texColor.a < 0.05) discard;
+                        if (texColor.a < 0.05) discard; // 丢弃透明部分
 
-                        // 颜色增强：让中心更亮白
-                        vec3 finalColor = vColor * 2.0; 
+                        // 颜色提亮，中心部分可能更白
+                        vec3 finalColor = vColor * (1.0 + texColor.a * 1.5); 
 
                         gl_FragColor = vec4(finalColor, vAlpha * texColor.a);
                     }
                 `,
-                blending: THREE.AdditiveBlending, // 加法混合，关键！产生发光叠加效果
+                blending: THREE.AdditiveBlending,
                 depthWrite: false,
                 transparent: true
             });
@@ -288,17 +317,15 @@
             scene.add(particles);
         }
 
-        // 生成高斯模糊的光斑纹理
         function getTexture() {
             const canvas = document.createElement('canvas');
             canvas.width = 64; canvas.height = 64;
             const ctx = canvas.getContext('2d');
             
-            // 绘制辉光
             const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
             g.addColorStop(0, 'rgba(255, 255, 255, 1)'); // 中心极亮
-            g.addColorStop(0.3, 'rgba(100, 200, 255, 0.5)');
-            g.addColorStop(0.5, 'rgba(0, 50, 100, 0.2)');
+            g.addColorStop(0.4, 'rgba(100, 200, 255, 0.6)'); // 柔和一点
+            g.addColorStop(0.7, 'rgba(0, 50, 100, 0.3)');
             g.addColorStop(1, 'rgba(0, 0, 0, 0)');
             
             ctx.fillStyle = g;
@@ -308,60 +335,151 @@
             return tex;
         }
 
-        // --- 3. 手势逻辑 ---
+        // --- 3. 手势识别与状态控制 ---
+        let lastHandCenter = null; // 用于记录上一次手部中心点，计算滑动
+
         function detectGesture(landmarks) {
             const wrist = landmarks[0];
-            const tips = [4, 8, 12, 16, 20].map(i => landmarks[i]);
+            const tipsIndices = [4, 8, 12, 16, 20]; // 拇指到小指
+            const tips = tipsIndices.map(i => landmarks[i]);
             
-            // 计算指尖到手腕的平均距离
+            // 计算平均指尖到手腕的距离 (用于判断张开/握拳)
             let avgDist = 0;
-            tips.forEach(t => {
-                avgDist += Math.sqrt(Math.pow(t.x-wrist.x, 2) + Math.pow(t.y-wrist.y, 2) + Math.pow(t.z-wrist.z, 2));
-            });
+            tips.forEach(t => { avgDist += Math.sqrt(Math.pow(t.x - wrist.x, 2) + Math.pow(t.y - wrist.y, 2) + Math.pow(t.z - wrist.z, 2)); });
             avgDist /= 5;
 
-            // 握拳：所有手指缩成一团
-            if (avgDist < 0.15) return 'FIST';
+            // 1. 握拳 (FIST) - 所有手指蜷缩
+            if (avgDist < 0.18) return 'FIST';
             
-            // 张开：所有手指伸展
-            if (avgDist > 0.35) return 'OPEN';
+            // 2. 张开 (OPEN) - 所有手指伸展
+            if (avgDist > 0.30) return 'OPEN';
 
-            // 指向：仅食指伸直 (简单判断：食指远，小指近)
-            const indexDist = Math.sqrt(Math.pow(tips[1].x-wrist.x, 2) + Math.pow(tips[1].y-wrist.y, 2));
-            const pinkyDist = Math.sqrt(Math.pow(tips[4].x-wrist.x, 2) + Math.pow(tips[4].y-wrist.y, 2));
-            if (indexDist > 0.3 && pinkyDist < 0.2) return 'POINT';
+            // 3. 滑动/拖动 (DRAG) - 食指伸直，拇指也稍微伸展，并且两者相对位置有变化
+            const indexTip = tips[1];
+            const thumbTip = tips[0];
+            const indexDistFromWrist = Math.sqrt(Math.pow(indexTip.x - wrist.x, 2) + Math.pow(indexTip.y - wrist.y, 2));
+            const thumbDistFromWrist = Math.sqrt(Math.pow(thumbTip.x - wrist.x, 2) + Math.pow(thumbTip.y - wrist.y, 2));
+            const thumbIndexDist = Math.sqrt(Math.pow(indexTip.x - thumbTip.x, 2) + Math.pow(indexTip.y - thumbTip.y, 2));
+
+            // 食指伸直，拇指也稍微伸直（距离手腕一定长度），且指尖有一定距离（排除捏合）
+            if (indexDistFromWrist > 0.25 && thumbDistFromWrist > 0.15 && thumbIndexDist > 0.2) {
+                return 'DRAG';
+            }
+            
+            // 4. 指向 (POINT) - 仅食指伸直，其他蜷缩 (作为DRAG的备选)
+            const othersCurled = tips.slice(2).every(t => Math.sqrt(Math.pow(t.x - wrist.x, 2) + Math.pow(t.y - wrist.y, 2)) < 0.25);
+            if (indexDistFromWrist > 0.3 && othersCurled && thumbDistFromWrist < 0.2) return 'POINT';
 
             return 'IDLE';
         }
 
+        function applyGestureEffects(gesture, handLandmarks) {
+            const uiText = document.getElementById('gesture-name');
+
+            switch(gesture) {
+                case 'OPEN':
+                    uiText.innerText = '掌心张开 - 星云爆发';
+                    targetState.scale = 1.3;
+                    targetState.dispersal = 1.0;
+                    targetState.particleAlpha = 1.0;
+                    controls.autoRotateSpeed = 0.8; // 爆发时旋转加快
+                    break;
+
+                case 'FIST':
+                    uiText.innerText = '手指握拳 - 核心坍缩';
+                    targetState.scale = 0.1;
+                    targetState.dispersal = 0.0;
+                    targetState.particleAlpha = 0.1; // 变得透明
+                    controls.autoRotateSpeed = 0.2;
+                    break;
+
+                case 'DRAG':
+                    uiText.innerText = '手指滑动 - 游移星海';
+                    targetState.scale = 1.05; // 轻微放大
+                    targetState.dispersal = 0.05; // 轻微扩散
+                    targetState.particleAlpha = 1.0;
+
+                    // 计算滑动距离和方向
+                    if (lastHandCenter && handLandmarks) {
+                        const currentHandCenter = { x: handLandmarks[0].x, y: handLandmarks[0].y }; // 使用手腕作为参考点
+                        const dx = currentHandCenter.x - lastHandCenter.x;
+                        const dy = currentHandCenter.y - lastHandCenter.y;
+
+                        // 移动场景，反向操作
+                        // Three.js 的 OrbitControls.target 实际上是相机看向的点
+                        // 我们直接修改相机位置来实现拖动效果，更直观
+                        // 注意：这里的 dx, dy 是屏幕坐标，需要映射到3D空间
+                        // 简单的映射：x轴方向移动，y轴方向移动
+                        camera.position.x -= dx * 80 * state.scale; // 放大系数影响拖动灵敏度
+                        camera.position.y += dy * 80 * state.scale;
+
+                        // 限制相机移动范围，使其在粒子群附近
+                        camera.position.x = THREE.MathUtils.clamp(camera.position.x, -100, 100);
+                        camera.position.y = THREE.MathUtils.clamp(camera.position.y, -100, 100);
+                        // Z轴保持不变，我们只是平移，不是拉近拉远
+                        camera.position.z = 50; 
+
+                        // OrbitControls 会自动调整，但如果希望完全控制，可以禁用 autoRotate
+                        // controls.autoRotate = false; 
+                    }
+                    controls.autoRotateSpeed = 0.1; // 滑动时慢速旋转
+                    break;
+                
+                case 'POINT':
+                    uiText.innerText = '手指指向 - 能量汇聚';
+                    targetState.scale = 1.1;
+                    targetState.dispersal = 0.1;
+                    targetState.particleAlpha = 1.0;
+                    controls.autoRotateSpeed = 0.5;
+                    break;
+
+                default: // IDLE or SYSTEM READY
+                    uiText.innerText = '系统准备就绪';
+                    targetState.scale = 1.0;
+                    targetState.dispersal = 0.05; // 默认微幅漂浮
+                    targetState.particleAlpha = 1.0;
+                    controls.autoRotateSpeed = 0.3;
+                    lastHandCenter = null; // 清空拖动记录
+                    break;
+            }
+            
+            // 更新 UI 状态
+            state.gestureName = uiText.innerText;
+            state.scale = targetState.scale;
+            state.dispersal = targetState.dispersal;
+            state.particleAlpha = targetState.particleAlpha;
+        }
+
         function updateState() {
-            // 平滑过渡 (Lerp)
+            // 平滑插值
             const speed = 0.05;
             state.scale += (targetState.scale - state.scale) * speed;
             state.dispersal += (targetState.dispersal - state.dispersal) * speed;
+            state.particleAlpha += (targetState.particleAlpha - state.particleAlpha) * speed;
             
             // 更新 Shader Uniforms
             if (material) {
-                material.uniforms.uTime.value = time;
+                material.uniforms.uTime.value += 0.01; // 增加时间流逝，驱动动画
                 material.uniforms.uScale.value = state.scale;
                 material.uniforms.uDispersal.value = state.dispersal;
+                material.uniforms.uParticleAlpha.value = state.particleAlpha;
             }
 
-            // UI 文字更新
+            // 更新 UI 文字样式
             const ui = document.getElementById('gesture-name');
-            ui.innerText = state.gestureName;
-            if (state.gestureName !== 'SYSTEM READY' && state.gestureName !== '') {
+            if (state.gestureName !== '系统准备就绪') {
                 ui.classList.add('active-text');
             } else {
                 ui.classList.remove('active-text');
             }
+            ui.innerText = state.gestureName;
         }
 
         // --- 4. 循环与 MediaPipe ---
         function animate() {
             requestAnimationFrame(animate);
-            time += 0.01;
             updateState();
+            controls.update(); // OrbitControls 需要更新
             renderer.render(scene, camera);
         }
 
@@ -372,34 +490,26 @@
             hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
             
             hands.onResults(results => {
+                let currentGesture = 'IDLE';
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                    const gesture = detectGesture(results.multiHandLandmarks[0]);
+                    const landmarks = results.multiHandLandmarks[0];
+                    currentGesture = detectGesture(landmarks);
                     
-                    if (gesture === 'OPEN') {
-                        targetState.scale = 1.2;       // 稍微变大
-                        targetState.dispersal = 1.0;   // 剧烈炸开！
-                        state.gestureName = "DISPERSE";
-                    } else if (gesture === 'FIST') {
-                        targetState.scale = 0.1;       // 极度浓缩
-                        targetState.dispersal = 0.0;   // 聚拢
-                        state.gestureName = "COLLAPSE";
-                    } else if (gesture === 'POINT') {
-                        targetState.scale = 1.0;
-                        targetState.dispersal = 0.2;   // 轻微浮动
-                        state.gestureName = "FOCUS";
-                        // 指向时旋转加速
-                        particles.rotation.y += 0.02; 
-                        particles.rotation.x += 0.01;
+                    // 记录当前手部中心点，用于计算滑动
+                    if (currentGesture === 'DRAG') {
+                        if (!lastHandCenter) { // 第一次进入DRAG，记录初始点
+                            lastHandCenter = { x: landmarks[0].x, y: landmarks[0].y };
+                        }
                     } else {
-                        targetState.scale = 1.0;
-                        targetState.dispersal = 0.0;
-                        state.gestureName = "";
+                        lastHandCenter = null; // 离开DRAG状态，清空记录
+                        controls.autoRotate = true; // 恢复自动旋转
                     }
+                    
+                    applyGestureEffects(currentGesture, landmarks);
                 } else {
-                    // 无手势，恢复默认呼吸
-                    targetState.scale = 1.0;
-                    targetState.dispersal = 0.1; // 默认带一点点散开，比较自然
-                    state.gestureName = "";
+                    applyGestureEffects('IDLE'); // 没有检测到手
+                    lastHandCenter = null;
+                    controls.autoRotate = true;
                 }
             });
 
@@ -410,6 +520,7 @@
             cam.start().then(() => document.getElementById('loader').style.display = 'none');
         }
 
+        // --- 启动 ---
         init();
         animate();
         initMediaPipe();
