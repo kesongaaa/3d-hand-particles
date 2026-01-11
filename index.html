@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 灵动核心 - 广域扩散版</title>
+    <title>Three.js 灵动核心 - 沉浸版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000205; font-family: sans-serif; }
         
+        /* 【修改点】隐藏视频容器，但保留在DOM中供算法使用 */
         #video-container {
-            position: absolute; bottom: 10px; left: 10px;
-            width: 120px; height: 90px;
-            opacity: 0.3; border-radius: 8px; overflow: hidden;
-            pointer-events: none; z-index: 0;
+            display: none; 
         }
+
         #input-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 
         #loader {
@@ -58,6 +57,7 @@
     
     <div id="debug-info">System Ready</div>
 
+    <!-- 视频元素依然存在，只是看不见了 -->
     <div id="video-container">
         <video id="input-video" playsinline></video>
     </div>
@@ -304,7 +304,6 @@
                         `Gesture: ${gesture}<br>Pos: ${targetState.posX.toFixed(1)}, ${targetState.posY.toFixed(1)}`;
 
                     if (gesture === 'OPEN') {
-                        // 【修改点】：增加扩散幅度到 2.4 (原1.6)，增加扰动到 1.5
                         targetState.expansion = 2.4; 
                         targetState.turbulence = 1.5; 
                         targetState.rotationVel = 0;
