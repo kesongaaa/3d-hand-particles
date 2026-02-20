@@ -2,448 +2,558 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 纯净星座 - 灵动微操版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Star Warp: Omni-Directional</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000205; }
-        #video-container { display: none; }
-
-        #loader {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000205; display: flex;
-            align-items: center; justify-content: center;
-            z-index: 100; transition: opacity 0.8s ease;
+        body {
+            margin: 0; overflow: hidden; background-color: #000;
+            font-family: 'Segoe UI', sans-serif; user-select: none;
         }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #video-input { display: none; }
+
+        /* HUD 界面 */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         
-        .spinner {
-            width: 50px; height: 50px;
-            border: 2px solid rgba(255, 255, 255, 0.1);
-            border-top: 2px solid #00d2ff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
+        .hud-top {
+            display: flex; justify-content: space-between; padding: 40px 60px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+        }
+        .hud-value { 
+            font-size: 42px; font-weight: 300; color: #fff; font-family: monospace;
+            text-shadow: 0 0 10px rgba(100, 200, 255, 0.5); font-variant-numeric: tabular-nums;
+        }
+        .hud-label { 
+            font-size: 12px; color: #88aaff; letter-spacing: 2px; text-transform: uppercase;
         }
 
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* 状态提示 */
+        #warp-status {
+            position: absolute; bottom: 18%; left: 50%; transform: translateX(-50%);
+            color: #00ffff; font-size: 24px; font-weight: 800; letter-spacing: 10px;
+            opacity: 0; transition: opacity 0.3s;
+            text-shadow: 0 0 30px #00ffff; font-style: italic;
+        }
+        #warp-status.active { opacity: 1; transform: translateX(-50%) scale(1.1); }
+
+        /* 弹窗 */
+        #modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; background: rgba(5, 12, 24, 0.9);
+            padding: 50px 80px; border: 1px solid #334455; border-radius: 8px;
+            box-shadow: 0 0 80px rgba(0, 150, 255, 0.2);
+            backdrop-filter: blur(15px);
+            pointer-events: auto; min-width: 320px;
+            border-top: 2px solid #00aaff;
+            transition: opacity 0.3s;
+        }
+        h1 { margin: 0 0 15px 0; color: #fff; font-size: 32px; letter-spacing: 8px; font-weight: 300; }
+        p { color: #8899aa; margin: 10px 0; font-size: 14px; letter-spacing: 1px; line-height: 1.6; }
+        
+        .btn {
+            margin-top: 35px; padding: 14px 40px; font-size: 16px; font-weight: 600;
+            color: #000; background: #00aaff; border: none; border-radius: 2px;
+            cursor: pointer; letter-spacing: 3px;
+            box-shadow: 0 0 20px rgba(0, 170, 255, 0.4); transition: all 0.3s;
+        }
+        .btn:hover { background: #fff; box-shadow: 0 0 30px #fff; letter-spacing: 5px;}
+
     </style>
 
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 </head>
 <body>
 
-    <div id="loader">
-        <div class="spinner"></div>
-    </div>
+    <video id="video-input" playsinline></video>
     
-    <div id="video-container">
-        <video id="input-video" playsinline></video>
+    <div id="ui-layer">
+        
+        <div class="hud-top">
+            <div>
+                <div class="hud-value" id="dist-ui">0.0</div>
+                <div class="hud-label">LIGHT YEARS</div>
+            </div>
+            <div style="text-align:right">
+                <div class="hud-value" id="speed-ui">0</div>
+                <div class="hud-label">VELOCITY</div>
+            </div>
+        </div>
+        
+        <div id="warp-status">WARP DRIVE ENGAGED</div>
+
+        <div id="modal">
+            <h1 id="modal-title">STAR WARP</h1>
+            <p id="modal-desc">SYSTEM ONLINE</p>
+            <button id="start-btn" class="btn" style="display:none">LAUNCH</button>
+        </div>
     </div>
 
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
+<script>
+// ================= 配置 =================
+const CONFIG = {
+    normalSpeed: 60,
+    warpSpeed: 180,
+    accel: 0.8,
+    tunnelRadius: 32,      
+    
+    // 飞行范围限制 (比隧道稍小)
+    flightLimitX: 22,
+    flightLimitY: 16,
+
+    fovNormal: 70,
+    fovWarp: 100,
+    spawnRate: 100,
+    
+    colors: {
+        bg: 0x010103,
+        tunnel: 0x0a0015,
+        rock: 0x666677,
+        warpStar: 0x88ffff
+    }
+};
+
+// ================= 状态 =================
+const STATE = {
+    running: false,
+    speed: 0,
+    distance: 0,
+    
+    // 玩家位置 (XY轴)
+    playerX: 0,
+    playerY: 0,
+    // 目标位置
+    targetX: 0,
+    targetY: 0,
+
+    isFist: false,
+    isWarping: false,
+    handDetected: false,
+    frame: 0
+};
+
+// ================= Three.js 核心 =================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(CONFIG.colors.bg);
+scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.007);
+
+const camera = new THREE.PerspectiveCamera(CONFIG.fovNormal, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+document.body.appendChild(renderer.domElement);
+
+// --- 灯光 ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambientLight);
+const sunLight = new THREE.PointLight(0xaaddff, 1.5, 300);
+sunLight.position.set(0, 50, -100);
+scene.add(sunLight);
+const shipLight = new THREE.PointLight(0x00ffff, 1.2, 50);
+scene.add(shipLight);
+
+// ================= 视觉核心 =================
+
+// 1. 柔和粒子贴图
+function createSoftParticleTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32; canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    grad.addColorStop(0.3, 'rgba(200, 220, 255, 0.6)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 32, 32);
+    return new THREE.CanvasTexture(canvas);
+}
+const starTexture = createSoftParticleTexture();
+
+// 2. 动态星云隧道 (更通透)
+const tunnelGeo = new THREE.CylinderGeometry(CONFIG.tunnelRadius, CONFIG.tunnelRadius, 500, 32, 1, true);
+tunnelGeo.rotateX(-Math.PI / 2);
+tunnelGeo.translate(0, 0, -200);
+
+const tunnelMat = new THREE.ShaderMaterial({
+    uniforms: {
+        uTime: { value: 0 },
+        uSpeed: { value: 0 },
+        uColor: { value: new THREE.Color(CONFIG.colors.tunnel) }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
-    </script>
+    `,
+    fragmentShader: `
+        uniform float uTime;
+        uniform float uSpeed;
+        uniform vec3 uColor;
+        varying vec2 vUv;
 
-    <script type="module">
-        import * as THREE from 'three';
+        float random (in vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
+        float noise (in vec2 st) {
+            vec2 i = floor(st); vec2 f = fract(st);
+            float a = random(i); float b = random(i + vec2(1.0, 0.0));
+            float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+        }
 
-        // --- 十二星座数据 ---
-        const ZODIAC = [
-            { name: "ARIES", cInner: 0xff3300, cOuter: 0xffaa00, stars: [[-10,-5,0],[-2,2,2],[5,4,0],[10,2,-2]] },
-            { name: "TAURUS", cInner: 0x00ff88, cOuter: 0x006622, stars: [[0,-5,0],[5,2,0],[10,8,2],[-5,6,-2],[-8,10,0]] },
-            { name: "GEMINI", cInner: 0xffffff, cOuter: 0xaaaaff, stars: [[-6,10,0],[-6,-10,0],[6,10,2],[6,-10,-2],[0,0,0]] },
-            { name: "CANCER", cInner: 0x00ffff, cOuter: 0x0055ff, stars: [[0,0,0],[-5,5,2],[-5,-8,-2],[6,-4,0],[5,6,0]] },
-            { name: "LEO", cInner: 0xffaa00, cOuter: 0xff0000, stars: [[5,-8,0],[10,-5,0],[0,0,2],[-5,5,0],[-2,10,-2],[4,8,0]] },
-            { name: "VIRGO", cInner: 0xccff00, cOuter: 0x558800, stars: [[12,5,0],[5,8,2],[-2,0,0],[-8,-5,-2],[0,-10,0],[8,-8,2]] },
-            { name: "LIBRA", cInner: 0xffccff, cOuter: 0xaa00aa, stars: [[0,8,0],[-8,-5,2],[8,-5,-2],[-4,-10,0],[4,-10,0]] },
-            { name: "SCORPIO", cInner: 0xaa0000, cOuter: 0x220033, stars: [[10,8,0],[5,5,2],[0,0,0],[-5,-5,-2],[-2,-10,0],[2,-8,2]] },
-            { name: "SAGITTARIUS", cInner: 0xff8800, cOuter: 0x6600cc, stars: [[-10,-8,0],[0,0,2],[8,5,-2],[5,-5,0],[2,-2,0],[10,-2,2]] },
-            { name: "CAPRICORN", cInner: 0x885522, cOuter: 0x442200, stars: [[-10,8,0],[0,-8,2],[10,5,-2],[5,8,0],[-5,0,0]] },
-            { name: "AQUARIUS", cInner: 0x00ccff, cOuter: 0xffffff, stars: [[-8,10,0],[-4,5,0],[0,0,0],[4,-5,0],[8,-10,0],[-2,8,2],[2,3,-2]] },
-            { name: "PISCES", cInner: 0x0055ff, cOuter: 0x00ffcc, stars: [[-8,5,0],[-5,0,2],[0,-8,0],[5,0,-2],[8,8,0],[0,0,0]] }
-        ];
-
-        let currentPresetIndex = 0;
-        let lastSwitchTime = 0;
-
-        const COUNT = 32000; 
-        
-        let scene, camera, renderer, particles, material;
-        let time = 0;
-        let morphTargetTime = 0; 
-        
-        // 状态
-        let state = {
-            expansion: 1.0,       
-            turbulence: 0.2,      
-            rotationVel: 0.0,     
-            baseSpeed: 0.001,
-            posX: 0, posY: 0,
-            cInner: new THREE.Color(ZODIAC[0].cInner),
-            cOuter: new THREE.Color(ZODIAC[0].cOuter)
-        };
-        
-        let targetState = { 
-            expansion: 1.0, 
-            turbulence: 0.2, 
-            rotationVel: 0.0,
-            posX: 0, posY: 0,
-            cInner: new THREE.Color(ZODIAC[0].cInner),
-            cOuter: new THREE.Color(ZODIAC[0].cOuter)
-        };
-
-        let lastHandX = 0.5;
-
-        function initScene() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x000103); 
-            scene.fog = new THREE.FogExp2(0x000103, 0.02); 
-
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-            camera.position.z = 38;
-            camera.lookAt(0,0,0);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            document.body.appendChild(renderer.domElement);
-
-            createParticles();
+        void main() {
+            vec2 p = vUv * vec2(2.0, 8.0);
+            p.y += uTime * 1.5;
+            float n = noise(p);
             
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
+            // 极淡的透明度，只保留边缘感
+            float alpha = smoothstep(0.45, 0.8, n) * 0.12; 
+            
+            vec3 color = uColor + vec3(n * 0.3);
+            color += vec3(0.5, 0.9, 1.0) * (uSpeed / 500.0);
+            
+            gl_FragColor = vec4(color, alpha);
         }
+    `,
+    transparent: true,
+    side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+});
+scene.add(new THREE.Mesh(tunnelGeo, tunnelMat));
 
-        // --- 星座生成 (纯数据计算) ---
-        function calculateShapeData(index) {
-            const data = ZODIAC[index];
-            const stars = data.stars;
-            const arr = new Float32Array(COUNT * 3);
-            const SCALE = 1.3;
+// 3. 粒子流
+const starsCount = 1000;
+const starsGeo = new THREE.BufferGeometry();
+const starsPos = [];
+for(let i=0; i<starsCount; i++) {
+    // 中空分布
+    const minR = CONFIG.tunnelRadius * 0.4;
+    const maxR = CONFIG.tunnelRadius * 0.95;
+    const r = minR + Math.random() * (maxR - minR);
+    const theta = Math.random() * Math.PI * 2;
+    starsPos.push(r * Math.cos(theta), r * Math.sin(theta), (Math.random()-0.5)*500 - 150);
+}
+starsGeo.setAttribute('position', new THREE.Float32BufferAttribute(starsPos, 3));
 
-            for(let i=0; i<COUNT; i++) {
-                const i3 = i*3;
-                let x,y,z;
-                const rand = Math.random();
+const starsMat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.9,
+    map: starTexture,
+    transparent: true,
+    opacity: 0.8,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true
+});
+const starSystem = new THREE.Points(starsGeo, starsMat);
+scene.add(starSystem);
 
-                if (rand < 0.15) {
-                    // 恒星
-                    const star = stars[Math.floor(Math.random() * stars.length)];
-                    const r = Math.pow(Math.random(), 3) * 2.5; 
-                    const theta = Math.random() * Math.PI * 2;
-                    const phi = Math.acos(2*Math.random()-1);
-                    x = (star[0] + r * Math.sin(phi) * Math.cos(theta)) * SCALE;
-                    y = (star[1] + r * Math.sin(phi) * Math.sin(theta)) * SCALE;
-                    z = (star[2] + r * Math.cos(phi)) * SCALE;
+// ================= 障碍物 =================
+const meteors = [];
+const meteorGeo = new THREE.IcosahedronGeometry(2.2, 0);
+const meteorMat = new THREE.MeshStandardMaterial({
+    color: CONFIG.colors.rock,
+    roughness: 0.8,
+    flatShading: true,
+});
+
+const frags = [];
+const fragGeo = new THREE.TetrahedronGeometry(0.6, 0);
+const fragMat = new THREE.MeshBasicMaterial({ color: 0xffddaa });
+
+function spawnMeteor() {
+    if(!STATE.running) return;
+    
+    const m = new THREE.Mesh(meteorGeo, meteorMat.clone());
+    
+    // 全截面随机生成 (不仅是水平线)
+    // 随机极坐标 -> 笛卡尔坐标
+    const r = Math.random() * (CONFIG.tunnelRadius * 0.6); // 在半径60%区域内生成，迫使玩家利用全屏躲避
+    const theta = Math.random() * Math.PI * 2;
+    
+    m.position.set(r * Math.cos(theta), r * Math.sin(theta), -400);
+    
+    m.userData = {
+        rot: { x: Math.random()*0.05, y: Math.random()*0.05 },
+        active: true
+    };
+    const s = 0.8 + Math.random() * 1.0;
+    m.scale.set(s,s,s);
+    
+    scene.add(m);
+    meteors.push(m);
+}
+
+function createExplosion(pos) {
+    for(let i=0; i<8; i++) {
+        const p = new THREE.Mesh(fragGeo, fragMat);
+        p.position.copy(pos);
+        p.userData.vel = new THREE.Vector3((Math.random()-0.5)*2, (Math.random()-0.5)*2, Math.random()*2 + 1);
+        scene.add(p);
+        frags.push(p);
+    }
+}
+
+// ================= 核心逻辑 =================
+const clock = new THREE.Clock();
+
+function update(dt) {
+    if(!STATE.running) return;
+
+    // 1. 速度
+    STATE.isWarping = STATE.isFist;
+    let targetSpeed = STATE.isWarping ? CONFIG.warpSpeed : CONFIG.normalSpeed;
+    STATE.speed += (targetSpeed - STATE.speed) * 0.1;
+    
+    if(STATE.isWarping) starsMat.color.setHex(CONFIG.colors.warpStar);
+    else starsMat.color.setHex(0xffffff);
+
+    const moveDist = STATE.speed * dt;
+    STATE.distance += moveDist / 50;
+
+    // 2. 场景动画
+    tunnelMat.uniforms.uTime.value += dt * 0.5;
+    tunnelMat.uniforms.uSpeed.value = STATE.speed;
+    
+    const pos = starSystem.geometry.attributes.position.array;
+    for(let i=0; i<starsCount; i++) {
+        const idx = i*3;
+        pos[idx+2] += moveDist * 1.2;
+        if(pos[idx+2] > 50) {
+            pos[idx+2] = -400;
+            // 重新随机分布
+            const minR = CONFIG.tunnelRadius * 0.4;
+            const maxR = CONFIG.tunnelRadius * 0.95;
+            const r = minR + Math.random() * (maxR - minR);
+            const theta = Math.random() * Math.PI * 2;
+            pos[idx] = r * Math.cos(theta);
+            pos[idx+1] = r * Math.sin(theta);
+        }
+    }
+    starSystem.geometry.attributes.position.needsUpdate = true;
+
+    // 3. 飞船物理控制 (6DOF Simulation)
+    if(!STATE.handDetected) {
+        STATE.targetX *= 0.98;
+        STATE.targetY *= 0.98;
+    }
+
+    // XY轴平滑移动
+    STATE.playerX += (STATE.targetX - STATE.playerX) * 0.1;
+    STATE.playerY += (STATE.targetY - STATE.playerY) * 0.1;
+    
+    // 边界限制
+    STATE.playerX = Math.max(-CONFIG.flightLimitX, Math.min(CONFIG.flightLimitX, STATE.playerX));
+    STATE.playerY = Math.max(-CONFIG.flightLimitY, Math.min(CONFIG.flightLimitY, STATE.playerY));
+    
+    // 更新相机/飞船位置
+    camera.position.x = STATE.playerX;
+    camera.position.y = STATE.playerY;
+
+    // 飞行姿态计算 (关键: 增加俯仰和滚转反馈)
+    // 滚转 (Roll): 向左移动时，机身向左倾斜
+    const targetRoll = -STATE.playerX * 0.02; 
+    // 俯仰 (Pitch): 向上移动时，机头抬起 (负X旋转)
+    const targetPitch = STATE.playerY * 0.02;
+    // 偏航 (Yaw): 稍微带一点转向感
+    const targetYaw = -STATE.playerX * 0.01;
+
+    camera.rotation.z = targetRoll; // Z轴旋转控制滚转
+    camera.rotation.x = targetPitch; // X轴旋转控制俯仰
+    camera.rotation.y = targetYaw;
+
+    // FOV动态
+    const targetFov = STATE.isWarping ? CONFIG.fovWarp : CONFIG.fovNormal;
+    camera.fov += (targetFov - camera.fov) * 0.05;
+    camera.updateProjectionMatrix();
+    
+    // 灯光跟随
+    shipLight.position.set(camera.position.x, camera.position.y, -5);
+
+    // 4. 障碍物碰撞
+    for(let i=meteors.length-1; i>=0; i--) {
+        const m = meteors[i];
+        m.position.z += moveDist;
+        m.rotation.x += 0.02; m.rotation.y += 0.03;
+        
+        if(m.userData.active && m.position.z > -5 && m.position.z < 2) {
+            // 3D 距离检测 (XY平面距离)
+            const dx = m.position.x - STATE.playerX;
+            const dy = m.position.y - STATE.playerY;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            if(dist < 3.5) {
+                if(STATE.isWarping) {
+                    createExplosion(m.position);
+                    m.visible = false;
+                    m.userData.active = false;
                 } else {
-                    // 星云
-                    const s1 = stars[Math.floor(Math.random() * stars.length)];
-                    const s2 = stars[Math.floor(Math.random() * stars.length)];
-                    const lerpT = Math.random();
-                    const centerX = s1[0] + (s2[0]-s1[0]) * lerpT;
-                    const centerY = s1[1] + (s2[1]-s1[1]) * lerpT;
-                    const centerZ = s1[2] + (s2[2]-s1[2]) * lerpT;
-                    
-                    const r = 8 * Math.random(); 
-                    const theta = Math.random() * Math.PI * 2;
-                    const phi = Math.acos(2*Math.random()-1);
-                    x = (centerX + r * Math.sin(phi) * Math.cos(theta)) * SCALE;
-                    y = (centerY + r * Math.sin(phi) * Math.sin(theta)) * SCALE;
-                    z = (centerZ + r * Math.cos(phi)) * SCALE;
+                    gameOver();
                 }
-                arr[i3] = x; arr[i3+1] = y; arr[i3+2] = z;
-            }
-            return arr;
-        }
-
-        function createParticles() {
-            const geometry = new THREE.BufferGeometry();
-            
-            const posStart = calculateShapeData(0);
-            const posEnd = calculateShapeData(0); 
-
-            const randomness = new Float32Array(COUNT * 3);
-            const sizes = new Float32Array(COUNT);
-            
-            for (let i = 0; i < COUNT; i++) {
-                const i3 = i*3;
-                randomness[i3] = Math.random();
-                randomness[i3+1] = Math.random();
-                randomness[i3+2] = Math.random();
-                sizes[i] = (Math.random() < 0.05) ? (Math.random() * 2.0 + 1.0) : Math.random();
-            }
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(posStart, 3)); 
-            geometry.setAttribute('aTargetPos', new THREE.BufferAttribute(posEnd, 3)); 
-            geometry.setAttribute('randomness', new THREE.BufferAttribute(randomness, 3));
-            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-
-            material = new THREE.ShaderMaterial({
-                uniforms: {
-                    uTime: { value: 0 },
-                    uMorph: { value: 0.0 }, 
-                    uExpansion: { value: 1.0 },
-                    uTurbulence: { value: 0.0 },
-                    uColorInner: { value: new THREE.Color(ZODIAC[0].cInner) },
-                    uColorOuter: { value: new THREE.Color(ZODIAC[0].cOuter) }
-                },
-                vertexShader: `
-                    uniform float uTime;
-                    uniform float uMorph; 
-                    uniform float uExpansion;
-                    uniform float uTurbulence;
-                    uniform vec3 uColorInner;
-                    uniform vec3 uColorOuter;
-                    
-                    attribute vec3 aTargetPos; 
-                    attribute vec3 randomness;
-                    attribute float size;
-                    
-                    varying vec3 vColor;
-                    varying float vAlpha;
-
-                    void main() {
-                        vec3 pos = mix(position, aTargetPos, uMorph);
-
-                        float dist = length(pos) / 25.0; 
-                        vColor = mix(uColorInner, uColorOuter, clamp(dist, 0.0, 1.0));
-                        
-                        float twinkle = 0.0;
-                        if (size > 1.5) {
-                            twinkle = sin(uTime * 5.0 + randomness.x * 100.0) * 0.3;
-                            vColor += vec3(0.5); 
-                        }
-
-                        float breath = sin(uTime * 1.5 + randomness.x * 20.0) * 0.2;
-                        
-                        vec3 dir = normalize(pos);
-                        if(length(pos) < 0.1) dir = vec3(0.0, 1.0, 0.0);
-                        
-                        pos += dir * breath * uTurbulence; 
-                        
-                        float expFactor = max(0.0, uExpansion - 1.0);
-                        pos += dir * expFactor * 15.0 * randomness.y; 
-                        
-                        pos *= uExpansion;
-
-                        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-                        gl_Position = projectionMatrix * mvPosition;
-
-                        float sizeMult = (1.0 - dist * 0.5) + twinkle;
-                        gl_PointSize = size * sizeMult * (350.0 / -mvPosition.z);
-                        
-                        vAlpha = smoothstep(90.0, 30.0, length(mvPosition.xyz)); 
-                    }
-                `,
-                fragmentShader: `
-                    varying vec3 vColor;
-                    varying float vAlpha;
-
-                    void main() {
-                        float d = distance(gl_PointCoord, vec2(0.5));
-                        if(d > 0.5) discard;
-                        
-                        float glow = 1.0 - smoothstep(0.0, 0.5, d);
-                        glow = pow(glow, 2.0); 
-                        
-                        vec3 finalColor = vColor * 1.5; 
-
-                        gl_FragColor = vec4(finalColor, vAlpha * glow);
-                    }
-                `,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
-                transparent: true
-            });
-
-            particles = new THREE.Points(geometry, material);
-            scene.add(particles);
-        }
-
-        // --- 切换逻辑 (冷却加到800ms) ---
-        function switchPreset(direction) {
-            const now = Date.now();
-            // 防止太灵敏导致连跳，设置 800ms 冷却
-            if (now - lastSwitchTime < 800) return; 
-            lastSwitchTime = now;
-
-            currentPresetIndex += direction;
-            if (currentPresetIndex >= ZODIAC.length) currentPresetIndex = 0;
-            if (currentPresetIndex < 0) currentPresetIndex = ZODIAC.length - 1;
-
-            const p = ZODIAC[currentPresetIndex];
-
-            const geo = particles.geometry;
-            const attrPos = geo.attributes.position; 
-            const attrTarget = geo.attributes.aTargetPos; 
-            
-            attrPos.array.set(attrTarget.array);
-            attrPos.needsUpdate = true;
-
-            const newShapeData = calculateShapeData(currentPresetIndex);
-            attrTarget.array.set(newShapeData);
-            attrTarget.needsUpdate = true;
-
-            morphTargetTime = 0;
-            material.uniforms.uMorph.value = 0;
-
-            targetState.cInner.setHex(p.cInner);
-            targetState.cOuter.setHex(p.cOuter);
-            targetState.expansion = 1.0; 
-        }
-
-        function updateState() {
-            const lerpSpeed = 0.08; 
-            const moveSpeed = 0.08; 
-            const colorLerpSpeed = 0.05;
-            const morphSpeed = 0.02; 
-
-            if (morphTargetTime < 1.0) {
-                morphTargetTime += morphSpeed;
-                if (morphTargetTime > 1.0) morphTargetTime = 1.0;
-                if (material) material.uniforms.uMorph.value = morphTargetTime;
-            }
-
-            state.expansion += (targetState.expansion - state.expansion) * lerpSpeed;
-            state.turbulence += (targetState.turbulence - state.turbulence) * lerpSpeed;
-            state.rotationVel += (targetState.rotationVel - state.rotationVel) * lerpSpeed;
-            state.posX += (targetState.posX - state.posX) * moveSpeed;
-            state.posY += (targetState.posY - state.posY) * moveSpeed;
-
-            state.cInner.lerp(targetState.cInner, colorLerpSpeed);
-            state.cOuter.lerp(targetState.cOuter, colorLerpSpeed);
-
-            if (material) {
-                material.uniforms.uTime.value = time;
-                material.uniforms.uExpansion.value = state.expansion;
-                material.uniforms.uTurbulence.value = state.turbulence;
-                material.uniforms.uColorInner.value.copy(state.cInner);
-                material.uniforms.uColorOuter.value.copy(state.cOuter);
-            }
-
-            if (particles) {
-                particles.rotation.y += state.baseSpeed + state.rotationVel;
-                particles.rotation.x += state.rotationVel * 0.2; 
-                particles.position.x = state.posX;
-                particles.position.y = state.posY;
             }
         }
+        if(m.position.z > 20) { scene.remove(m); meteors.splice(i, 1); }
+    }
+    
+    // 碎屑
+    for(let i=frags.length-1; i>=0; i--) {
+        const p = frags[i];
+        p.position.add(p.userData.vel);
+        p.scale.multiplyScalar(0.92);
+        if(p.scale.x < 0.05) { scene.remove(p); frags.splice(i, 1); }
+    }
 
-        function animate() {
-            requestAnimationFrame(animate);
-            time += 0.01;
-            updateState();
-            renderer.render(scene, camera);
-        }
+    // 生成
+    STATE.frame++;
+    const rate = Math.max(20, CONFIG.spawnRate - STATE.speed * 0.3);
+    if(STATE.frame > rate) {
+        if(Math.random() > 0.3) spawnMeteor();
+        STATE.frame = 0;
+    }
+    
+    // UI状态
+    const warpUI = document.getElementById('warp-status');
+    if(STATE.isWarping) warpUI.classList.add('active');
+    else warpUI.classList.remove('active');
 
-        // --- 手势识别 ---
-        const getDist = (a, b) => Math.sqrt(Math.pow(a.x-b.x, 2) + Math.pow(a.y-b.y, 2));
-        function isFingerBent(lm, tipIdx, mcpIdx) {
-            return getDist(lm[tipIdx], lm[0]) < getDist(lm[mcpIdx], lm[0]) * 1.3;
-        }
+    document.getElementById('speed-ui').innerText = Math.floor(STATE.speed);
+    document.getElementById('dist-ui').innerText = STATE.distance.toFixed(1);
+}
 
-        function detectGesture(lm) {
-            const bentCount = [8,12,16,20].reduce((acc, tip, idx) => {
-                return acc + (isFingerBent(lm, tip, [5,9,13,17][idx]) ? 1 : 0);
-            }, 0);
-            const indexBent = isFingerBent(lm, 8, 5);
-            const middleBent = isFingerBent(lm, 12, 9);
-            const ringBent = isFingerBent(lm, 16, 13);
-            const pinkyBent = isFingerBent(lm, 20, 17);
+function gameOver() {
+    STATE.running = false;
+    const modal = document.getElementById('modal');
+    document.getElementById('modal-title').innerText = "CRITICAL DAMAGE";
+    document.getElementById('modal-title').style.color = "#ff4444";
+    document.getElementById('modal-desc').innerHTML = `MISSION ABORTED<br>DISTANCE: ${STATE.distance.toFixed(1)} LY`;
+    const btn = document.getElementById('start-btn');
+    btn.innerText = "RESTART SYSTEM";
+    btn.style.display = "inline-block";
+    modal.style.opacity = 1;
+    modal.style.pointerEvents = 'auto';
+}
 
-            const currX = 1.0 - lm[9].x; 
-            const velocity = currX - lastHandX;
-            lastHandX = currX;
-            
-            // 【核心修改】阈值降低到 0.015 (极度灵敏，轻撇手腕即可)
-            const swipeThreshold = 0.015; 
+function resetGame() {
+    STATE.speed = 0;
+    STATE.distance = 0;
+    STATE.playerX = 0;
+    STATE.playerY = 0;
+    STATE.targetX = 0;
+    STATE.targetY = 0;
+    STATE.running = true;
+    STATE.frame = 0;
+    
+    meteors.forEach(m => scene.remove(m));
+    meteors.length = 0;
+    frags.forEach(p => scene.remove(p));
+    frags.length = 0;
+    
+    const modal = document.getElementById('modal');
+    modal.style.opacity = 0;
+    modal.style.pointerEvents = 'none';
+}
 
-            if (bentCount < 3) {
-                if (velocity > swipeThreshold) return 'SWIPE_RIGHT';
-                if (velocity < -swipeThreshold) return 'SWIPE_LEFT';
+// ================= Hand Tracking (Omni-Directional) =================
+const videoEl = document.getElementById('video-input');
+
+function onHandResults(results) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        STATE.handDetected = true;
+        const lm = results.multiHandLandmarks[0];
+        
+        // 1. 位置映射 (X & Y)
+        let rawX = lm[9].x; 
+        let rawY = lm[9].y;
+        
+        // X轴: 翻转 + 放大
+        // 屏幕左(x大) -> 左移
+        let steerX = (0.5 - rawX) * 3.5; 
+        
+        // Y轴: 
+        // 原始数据: 0(上) -> 1(下)
+        // 3D坐标: +Y(上) -> -Y(下)
+        // 所以我们希望手向上(rawY小) -> 目标向上(targetY大)
+        let steerY = (0.5 - rawY) * 3.0;
+
+        STATE.targetX = steerX * CONFIG.flightLimitX;
+        STATE.targetY = steerY * CONFIG.flightLimitY;
+
+        // 2. 握拳检测
+        const wrist = lm[0];
+        const tips = [8, 12, 16, 20];
+        const mcps = [5, 9, 13, 17];
+        let folded = 0;
+        tips.forEach((tipIdx, i) => {
+            const dTip = Math.hypot(lm[tipIdx].x - wrist.x, lm[tipIdx].y - wrist.y);
+            const dMcp = Math.hypot(lm[mcps[i]].x - wrist.x, lm[mcps[i]].y - wrist.y);
+            if (dTip < dMcp * 1.1) folded++;
+        });
+        STATE.isFist = (folded >= 3);
+        
+    } else {
+        STATE.handDetected = false;
+        STATE.isFist = false;
+    }
+}
+
+// ================= Init =================
+window.onload = function() {
+    const desc = document.getElementById('modal-desc');
+    const btn = document.getElementById('start-btn');
+    
+    const hands = new Hands({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 0,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+    hands.onResults(onHandResults);
+    
+    const cameraUtils = new Camera(videoEl, {
+        onFrame: async () => { await hands.send({image: videoEl}); },
+        width: 320, height: 240
+    });
+    
+    desc.innerHTML = "MOVE HAND: UP/DOWN/LEFT/RIGHT<br>MAKE FIST: WARP SPEED";
+    btn.style.display = "inline-block";
+    
+    btn.onclick = async () => {
+        if (!STATE.running) {
+            btn.innerText = "CALIBRATING...";
+            try {
+                await cameraUtils.start();
+                videoEl.play();
+                resetGame();
+            } catch(e) {
+                desc.innerText = "CAMERA ERROR";
             }
-
-            if (bentCount === 4) return 'FIST';
-            if (bentCount === 0) return 'OPEN';
-            if (!indexBent && middleBent && ringBent && pinkyBent) return 'ROTATE';
-
-            return 'IDLE';
+        } else {
+            resetGame();
         }
-
-        function initMediaPipe() {
-            if (!window.Hands) { setTimeout(initMediaPipe, 100); return; }
-
-            const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-            hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-            
-            hands.onResults(results => {
-                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                    const lm = results.multiHandLandmarks[0];
-                    const gesture = detectGesture(lm);
-                    const palmSize = getDist(lm[0], lm[9]);
-
-                    targetState.posX = (0.5 - lm[9].x) * 60; 
-                    targetState.posY = (0.5 - lm[9].y) * 40; 
-
-                    if (gesture === 'SWIPE_RIGHT') switchPreset(1);
-                    else if (gesture === 'SWIPE_LEFT') switchPreset(-1);
-                    else if (gesture === 'OPEN') {
-                        targetState.expansion = 2.0; 
-                        targetState.turbulence = 1.0; 
-                        targetState.rotationVel = 0;
-                    } 
-                    else if (gesture === 'FIST') {
-                        let distFactor = Math.max(0.05, 1.0 - (palmSize - 0.15) * 4.0); 
-                        distFactor = Math.min(1.0, distFactor);
-                        targetState.expansion = 0.5 * distFactor; 
-                        targetState.turbulence = 0.0;
-                    } 
-                    else if (gesture === 'ROTATE') {
-                        targetState.expansion = 1.0;
-                        targetState.turbulence = 0.5; 
-                        // 【核心修改】旋转速度降低到 0.04 (更加厚重缓慢)
-                        if (lm[8].x < 0.4) targetState.rotationVel = 0.04; 
-                        else if (lm[8].x > 0.6) targetState.rotationVel = -0.04; 
-                        else targetState.rotationVel = 0.0;
-                    } 
-                    else {
-                        targetState.expansion = 1.0;
-                        targetState.turbulence = 0.2;
-                        targetState.rotationVel = 0;
-                    }
-                } else {
-                    targetState.expansion = 1.0;
-                    targetState.rotationVel = 0;
-                    targetState.posX = 0; targetState.posY = 0;
-                }
-            });
-
-            const cam = new window.Camera(document.getElementById('input-video'), {
-                onFrame: async () => await hands.send({image: document.getElementById('input-video')}),
-                width: 320, height: 240
-            });
-            
-            cam.start().then(() => {
-                const loader = document.getElementById('loader');
-                loader.style.opacity = 0;
-                setTimeout(() => loader.style.display = 'none', 800);
-            });
-        }
-
-        initScene();
-        animate();
-        initMediaPipe();
-
-    </script>
+    };
+    
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        update(clock.getDelta());
+        renderer.render(scene, camera);
+    }
+    animate();
+};
+</script>
 </body>
 </html>
